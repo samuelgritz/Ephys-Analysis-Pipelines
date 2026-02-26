@@ -1,0 +1,1544 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
+import os
+import sys
+import numpy as np
+import pickle
+import box_utils
+
+# Import Plotting Functions
+from plotting_utils import *
+
+# IMPORT BOX UTILITIES (Crucial for Example Traces)
+try:
+    import box_utils
+except ImportError:
+    print("Warning: box_utils not found. Raw data locating features will be disabled.")
+    box_utils = None
+
+# ==================================================================================================
+# GLOBAL CONFIG & MASTER DF LOADING
+# ==================================================================================================
+
+# 1. RAW DATA SOURCE (For Trace Examples Only - Panels B & D)
+#    This is the folder name in Box, NOT the local paper_data folder.
+RAW_DATA_BOX_FOLDER = "All_Combined_Data"
+
+# 2. PROCESSED DATA SOURCE (For Statistical Plots - Everything else)
+#    This is local in the repository.
+PAPER_DATA_DIR = "paper_data"
+
+def load_master_df():
+    """Locates and loads the master_df.csv from current or parent directories."""
+    candidates = [
+        'master_df.csv',
+        '../master_df.csv',
+        '../../master_df.csv'
+    ]
+    
+    for path in candidates:
+        if os.path.exists(path):
+            print(f"✓ Found Master DF at: {path}")
+            try:
+                df = pd.read_csv(path, low_memory=False)
+                # Ensure Cell_ID is string and clean for matching
+                if 'Cell_ID' in df.columns:
+                    df['Cell_ID'] = df['Cell_ID'].astype(str).str.strip()
+                return df
+            except Exception as e:
+                print(f"Error loading Master DF: {e}")
+                return None
+    
+    print("❌ Critical Warning: 'master_df.csv' not found. Example traces cannot be indexed.")
+    return None
+
+# Load immediately so it is available globally
+master_df = load_master_df()
+
+
+"""Sets matplotlib params for publication-quality figures."""
+plt.rcParams['font.family'] = 'Arial'
+plt.rcParams['font.size'] = 8
+plt.rcParams['axes.labelsize'] = 8
+plt.rcParams['axes.titlesize'] = 9
+plt.rcParams['xtick.labelsize'] = 8
+plt.rcParams['ytick.labelsize'] = 8
+plt.rcParams['legend.fontsize'] = 8
+
+# ==================================================================================================
+# FIGURE 1: BEHAVIOR
+# ==================================================================================================
+
+def plot_figure_1_behavior():
+    print("\n--- Generating Figure 1: Behavior ---")
+    setup_publication_style()
+    
+    # Load Dataframes from LOCAL paper_data
+    df_weights = load_data('Behavior_Analysis', 'Mouse_Weights_Processed.csv')
+    df_of_loco = load_data('Behavior_Analysis', 'Open_Field_Locomotion_Trial1.csv')
+    df_of_anx = load_data('Behavior_Analysis', 'Open_Field_Anxiety_Processed.csv')
+    df_dvc_hourly = load_data('DVC_Analysis', 'Hourly_Stats_By_Genotype.csv')
+    df_dvc_cages = load_data('DVC_Analysis', 'Cage_Specific_Hours_Summary.csv')
+    df_tmaze = load_data('Behavior_Analysis', 'T_Maze_Alternations.csv')
+    df_tmaze_entries = load_data('Behavior_Analysis', 'T_Maze_Zone_Entries.csv')
+    df_stats = load_data('Behavior_Analysis', 'Stats_Results_Figure_1.csv')
+
+    # Calculate Total Entries for T-Maze
+    if df_tmaze_entries is not None:
+        df_tmaze_entries['Total_Entries'] = df_tmaze_entries[['Start : entries', 'Left Arm : entries', 'Right Arm : entries']].sum(axis=1, skipna=True)
+
+    # Create Figure Layout:
+    # ROW 1: A (Mouse Image) | B (Body Weight - 2 cols)
+    # ROW 2: C (Tracing + Locomotion) | D (Anxiety)
+    # ROW 3: F (Circadian) | G (Dark Activity)
+    # ROW 4: H (T-maze tracing) | I (Distance) | J (Entries) | K (Alternation)
+    fig = plt.figure(figsize=(6.93, 9))  # 17.6cm width (6.93 inches)
+    
+    # Main grid with 4 rows
+    gs = fig.add_gridspec(4, 1, hspace=0.6,
+                         height_ratios=[1, 1, 1, 1])
+
+    # ===== ROW 1 =====
+    gs_row1 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[0], wspace=0.4, width_ratios=[1.5, 1, 1, 0.5])
+    
+    # Panel A: Mouse Image placeholder
+    ax_a = fig.add_subplot(gs_row1[0])
+    add_subplot_label(ax_a, "A")
+    ax_a.text(0.5, 0.5, 'Mouse Image\n(To be added)', 
+              ha='center', va='center', fontsize=8, color='gray', style='italic')
+    ax_a.set_xticks([])
+    ax_a.set_yticks([])
+    ax_a.set_facecolor('#f8f8f8')
+    for spine in ax_a.spines.values():
+        spine.set_visible(False)
+    
+    # Panel B: Body Weight (spans 2 cols - aligned with D and G)
+    ax_b = fig.add_subplot(gs_row1[1:3])
+    add_subplot_label(ax_b, "B")
+    if df_weights is not None:
+        summary = df_weights.groupby(['Timepoint_Label', 'Genotype'])['Weight_g'].agg(['mean', 'sem']).reset_index()
+        summary['top'] = summary['mean'] + summary['sem']
+        
+        plot_longitudinal_lines(ax_b, df_weights, 'Timepoint_Label', 'Weight_g', 'Genotype', 
+                                time_order=['P8-P10', 'P28', 'Adult'])
+        ax_b.set_title('Body Weight', fontsize=8)
+        ax_b.legend(frameon=False, fontsize=7)
+        ax_b.set_ylabel('Weight (g)')
+        
+        def get_y_for_time(tp):
+            sub = summary[summary['Timepoint_Label'] == tp]
+            return sub['top'].max() * 1.1 if not sub.empty else 30
+
+        annotate_from_stats(ax_b, df_stats, "Fig 1B", "P8-P10", x1=0, x2=0, y_pos=get_y_for_time('P8-P10'), bracket=True)
+        annotate_from_stats(ax_b, df_stats, "Fig 1B", "P28", x1=1, x2=1, y_pos=get_y_for_time('P28'), bracket=True)
+        annotate_from_stats(ax_b, df_stats, "Fig 1B", "Adult", x1=2, x2=2, y_pos=get_y_for_time('Adult'), bracket=True)
+        
+        # Add N numbers at each time point
+        time_order = ['P8-P10', 'P28', 'Adult']
+        for idx, timepoint in enumerate(time_order):
+            tp_data = df_weights[df_weights['Timepoint_Label'] == timepoint]
+            n_wt = len(tp_data[tp_data['Genotype'] == 'WT'])
+            n_gnb1 = len(tp_data[tp_data['Genotype'] == 'GNB1'])
+            
+            # Position N numbers below the plot
+            y_min = ax_b.get_ylim()[0]
+            y_range = ax_b.get_ylim()[1] - ax_b.get_ylim()[0]
+            n_y_pos = y_min - 0.12 * y_range  # Position below x-axis
+            
+            ax_b.text(idx, n_y_pos, f'n={n_wt}/{n_gnb1}', 
+                     ha='center', va='top', fontsize=6, color='gray')
+
+    # ===== ROW 2 ===== (C, D with equal 1:1 split)
+    gs_row2 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1], wspace=0.4, width_ratios=[1, 1])
+    
+    # Panel C: Locomotion
+    ax_c = fig.add_subplot(gs_row2[0])
+    add_subplot_label(ax_c, "C")
+    if df_of_loco is not None:
+        plot_bar_scatter(ax_c, df_of_loco, 'Genotype', 'Distance (m)', 'Genotype', order=['WT', 'GNB1'])
+        ax_c.set_title('Locomotion (Open Field)', fontsize=8)
+        annotate_from_stats(ax_c, df_stats, "Fig 1C", "Locomotion", x1=0, x2=1, y_pos=get_safe_y(df_of_loco['Distance (m)']))
+
+    # Panel D: Anxiety
+    ax_d = fig.add_subplot(gs_row2[1])
+    add_subplot_label(ax_d, "D")
+    if df_of_anx is not None:
+        plot_bar_scatter(ax_d, df_of_anx, 'Genotype', 'Center_Outer_Time_Ratio', 'Genotype', order=['WT', 'GNB1'])
+        ax_d.set_title('Anxiety Ratio', fontsize=8)
+        ax_d.set_ylabel('Center Outer Time Ratio')
+        annotate_from_stats(ax_d, df_stats, "Fig 1D", "Anxiety", x1=0, x2=1, y_pos=get_safe_y(df_of_anx['Center_Outer_Time_Ratio']))
+
+    # ===== ROW 3 ===== (F, G equal width - G aligned with D)
+    gs_row3 = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[2], wspace=0.4, width_ratios=[1, 1, 0])
+    
+    # Panel F: Circadian Activity
+    ax_f = fig.add_subplot(gs_row3[0])
+    add_subplot_label(ax_f, "F")
+    if df_dvc_hourly is not None:
+        plot_dvc_hourly(ax_f, df_dvc_hourly)
+        ax_f.set_title('Circadian Activity', fontsize=8)
+        ax_f.legend(frameon=False, loc='upper left', fontsize=7)
+
+    # Panel G: Total Activity (Dark Phase)
+    ax_g = fig.add_subplot(gs_row3[1])
+    add_subplot_label(ax_g, "G")
+    if df_dvc_cages is not None:
+        plot_bar_scatter(ax_g, df_dvc_cages, 'Genotype', 'Sum_All_Dark', 'Genotype', order=['WT', 'GNB1'])
+        ax_g.set_title('Total Activity (Dark Phase)', fontsize=8)
+        ax_g.set_ylabel('Summed Activity')
+        if df_stats is not None:
+            annotate_from_stats(ax_g, df_stats, "Fig 1G", "DVC Dark Phase", x1=0, x2=1, y_pos=get_safe_y(df_dvc_cages['Sum_All_Dark']))
+
+    # ===== ROW 4 ===== (H, I, J, K with equal widths)
+    gs_row4 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[3], wspace=0.4, width_ratios=[1, 1, 1, 1])
+    # Panel H: T-Maze Tracing Plots Placeholder
+    ax_h = fig.add_subplot(gs_row4[0])
+    add_subplot_label(ax_h, "H")
+    ax_h.text(0.5, 0.5, 'T-Maze\nTracing\nPlots', 
+              ha='center', va='center', fontsize=7, color='gray', style='italic')
+    ax_h.set_xticks([])
+    ax_h.set_yticks([])
+    ax_h.set_facecolor('#f5e6c8')  # Tan color
+    for spine in ax_h.spines.values():
+        spine.set_visible(False)
+    
+    # Panel I: Distance Traveled
+    ax_i = fig.add_subplot(gs_row4[1])
+    add_subplot_label(ax_i, "I")
+    if df_tmaze_entries is not None:
+        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Distance (m)', 'Genotype', order=['WT', 'GNB1'])
+        ax_i.set_title('Distance Traveled', fontsize=8)
+        ax_i.set_ylabel('Distance (m)')
+        # Add more y-ticks
+        ax_i.yaxis.set_major_locator(plt.MaxNLocator(6))
+        annotate_from_stats(ax_i, df_stats, "Fig 1I", "Distance", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Distance (m)']))
+    
+    # Panel J: Total Port Entries
+    ax_j = fig.add_subplot(gs_row4[2])
+    add_subplot_label(ax_j, "J")
+    if df_tmaze_entries is not None:
+        plot_bar_scatter(ax_j, df_tmaze_entries, 'Genotype', 'Total_Entries', 'Genotype', order=['WT', 'GNB1'])
+        ax_j.set_title('Total Port Entries', fontsize=8)
+        ax_j.set_ylabel('Total Entries')
+        annotate_from_stats(ax_j, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Entries']))
+    
+    # Panel K: Spontaneous Alternation
+    ax_k = fig.add_subplot(gs_row4[3])
+    add_subplot_label(ax_k, "K")
+    if df_tmaze is not None:
+        plot_bar_scatter(ax_k, df_tmaze, 'Genotype', 'Percent_Alternations', 'Genotype', order=['WT', 'GNB1'])
+        ax_k.set_title('Spontaneous Alternation', fontsize=8)
+        ax_k.set_ylabel('Percent Alternations')
+        ax_k.set_ylim(-1, 100)
+        annotate_from_stats(ax_k, df_stats, "Fig 1K", "Alternation", x1=0, x2=1, y_pos=90)
+
+    save_current_fig('Figure_1_Behavior')
+
+
+# ==================================================================================================
+# FIGURE 2: PHYSIOLOGY
+# ==================================================================================================
+
+def plot_figure_2_physiology():
+    print("\n--- Generating Figure 2: Physiology ---")
+    setup_publication_style()
+    
+    # ---------------------------------------------------------
+    # 1. Load Processed Data (FROM REPO paper_data)
+    # ---------------------------------------------------------
+    df_intrinsic = load_data('Physiology_Analysis', 'Intrinsic_properties.csv')
+    df_ap_ahp = load_data('Physiology_Analysis', 'combined_AP_AHP_rheobase_analysis.csv')
+    df_stats = load_data('Physiology_Analysis', 'Stats_Results_Figure_2.csv')
+
+    # Firing Rate & ISI (Unified CSV)
+    df_FI = load_data('Firing_Rate', 'Firing_Rates_plotting_format.csv')
+    
+    # Load FI Midpoints (from sigmoid fitting)
+    fi_midpoints_df = load_data('Firing_Rate', 'Sigmoid_Fit_Params.csv')
+    if fi_midpoints_df is not None and 'Midpoint' in fi_midpoints_df.columns:
+        fi_midpoints_df = fi_midpoints_df.rename(columns={'Midpoint': 'FI_Midpoint'})
+    
+    # Process FI Curves and ISI Curves
+    fi_df_final, fi_df_long = get_FI_data(df_FI)
+    isi_df_final = prepare_isi_curve_data(df_FI)
+
+    # Standardize Genotypes
+    for df in [df_intrinsic, df_ap_ahp, df_FI, fi_df_final, isi_df_final, fi_midpoints_df]:
+        if df is not None and 'Genotype' in df.columns:
+            df['Genotype'] = df['Genotype'].str.strip()
+
+    # ---------------------------------------------------------
+    # 2. Locate Raw Data (FROM BOX for Trace Panels)
+    # ---------------------------------------------------------
+    raw_traces_path = None
+    
+    if box_utils:
+        raw_traces_path = box_utils.get_data_path(target_folder_name=RAW_DATA_BOX_FOLDER)
+    
+    if not raw_traces_path and os.path.exists(RAW_DATA_BOX_FOLDER):
+        raw_traces_path = RAW_DATA_BOX_FOLDER
+
+    if not raw_traces_path:
+        print(f"⚠ Warning: Raw Data Folder '{RAW_DATA_BOX_FOLDER}' not found via Box or locally.") 
+        print("   Panel A will be a placeholder.")
+
+    # ---------------------------------------------------------
+    # 3. Setup NEW Layout
+    # ---------------------------------------------------------
+    # Row 1: Panel A (Rheobase Trace) | Panel B (Summary Table)
+    # Row 2: Panel C (FI Examples) | Panel D (F-I Curve) | Panel E (F-I Slope) | Panel F (ISI)
+    
+    fig = plt.figure(figsize=(6.89, 8))  # 17.5cm width, full column
+    
+    # Outer Grid: 3 Rows - Adjusted for square panels
+    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[0.6, 0.55, 0.6], hspace=0.5)
+
+    # ---------------------------------------------------------
+    # ROW 1: Panel A (Example Traces) & Panel B (Bar Plots)
+    # ---------------------------------------------------------
+    target_cell = '03142024_c2'  # Example cell for all traces
+    
+    # Export summary table to CSV
+    from plotting_utils import export_physiology_summary_table
+    export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, 
+                                   'paper_figures/Figure_2_Summary_Table.csv')
+    print('✓ Exported summary table to paper_figures/Figure_2_Summary_Table.csv')
+    
+    gs_row1 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer_grid[0], width_ratios=[0.5, 0.5], wspace=0.4)
+    
+    # Panel A: Voltage Sag Comparison (WT and GNB1 side-by-side)
+    gs_A = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row1[0], wspace=0.2)
+    ax_a_wt = fig.add_subplot(gs_A[0])
+    ax_a_gnb1 = fig.add_subplot(gs_A[1])
+    add_subplot_label(ax_a_wt, "A")
+    
+    if raw_traces_path and master_df is not None:
+        from plotting_utils import plot_voltage_sag_comparison
+        target_wt_sag = '03142024_c2'
+        target_gnb1_sag = '02132024_c1'
+        plot_voltage_sag_comparison(ax_a_wt, ax_a_gnb1, raw_traces_path, master_df, 
+                                    target_wt=target_wt_sag, target_gnb1=target_gnb1_sag)
+        # Tighten Y-axis to make Panel A shorter
+        ax_a_wt.set_ylim(-95, -50)
+        ax_a_gnb1.set_ylim(-95, -50)
+    else:
+        plot_trace_placeholder(ax_a_wt, "Data Unavailable")
+        plot_trace_placeholder(ax_a_gnb1, "Data Unavailable")
+
+    # Panel B: AP Rheobase Traces (WT and GNB1 zoomed in)
+    gs_B = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row1[1], wspace=0.2)
+    ax_b_wt = fig.add_subplot(gs_B[0])
+    ax_b_gnb1 = fig.add_subplot(gs_B[1])
+    add_subplot_label(ax_b_wt, "B")
+    
+    if raw_traces_path and master_df is not None:
+        # Use existing rheobase plotting function with zoomed view
+        target_wt_rheo = '03142024_c2'
+        target_gnb1_rheo = '05092024_c3'
+        sweep_idx_wt = get_sweep_index_from_master(master_df, target_wt_rheo)
+        sweep_idx_gnb1 = get_sweep_index_from_master(master_df, target_gnb1_rheo)
+        
+        if sweep_idx_wt is not None:
+            plot_example_rheobase_and_sweeps(ax_b_wt, raw_traces_path, master_df=master_df, 
+                                             target_cell_id=target_wt_rheo, sweep_idx=sweep_idx_wt, analysis_df=df_ap_ahp, show_values=False)
+            ax_b_wt.axis('off')
+            ax_b_wt.text(0.02, 0.95, 'WT', transform=ax_b_wt.transAxes, fontsize=9, fontweight='bold', va='top')
+        else:
+            plot_trace_placeholder(ax_b_wt, "WT Data Unavailable")
+            
+        if sweep_idx_gnb1 is not None:
+            plot_example_rheobase_and_sweeps(ax_b_gnb1, raw_traces_path, master_df=master_df, 
+                                             target_cell_id=target_gnb1_rheo, sweep_idx=sweep_idx_gnb1, analysis_df=df_ap_ahp, show_values=False)
+            ax_b_gnb1.axis('off')
+            ax_b_gnb1.text(0.02, 0.95, 'GNB1', transform=ax_b_gnb1.transAxes, fontsize=9, fontweight='bold', va='top', color='red')
+            add_scale_bar(ax_b_gnb1, 5, 20, x_pos=0.85, y_pos=0.1)
+        else:
+            plot_trace_placeholder(ax_b_gnb1, "GNB1 Data Unavailable")
+        
+        # Set shared Y-limits for Panel B to match Panel A's vertical scale
+        ax_b_wt.set_ylim(-80, 50)
+        ax_b_gnb1.set_ylim(-80, 50)
+    else:
+        plot_trace_placeholder(ax_b_wt, "Data Unavailable")
+        plot_trace_placeholder(ax_b_gnb1, "Data Unavailable")
+
+    # ---------------------------------------------------------
+    # ROW 2: Panels C (Bar Plots) | D (FI Examples) | E (F-I Curve)
+    # ---------------------------------------------------------
+    gs_row2 = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=outer_grid[1], width_ratios=[0.45, 0.25, 0.30], wspace=0.3)
+    
+    # Panel C: Bar Plots (Voltage Sag, AHP Decay)
+    gs_C = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row2[0], wspace=0.5)
+    
+    ax_c1 = fig.add_subplot(gs_C[0])
+    add_subplot_label(ax_c1, "C")
+    if df_intrinsic is not None and 'Voltage_sag' in df_intrinsic.columns:
+        plot_bar_scatter(ax_c1, df_intrinsic, 'Genotype', 'Voltage_sag', 'Genotype', order=['WT', 'GNB1'])
+        ax_c1.set_ylabel('Voltage Sag (%)')
+        ax_c1.set_title('Voltage Sag', fontsize=8)
+        ax_c1.set_box_aspect(1)
+        if df_stats is not None:
+            annotate_from_stats(ax_c1, df_stats, "Fig 2A", "Voltage Sag", x1=0, x2=1, y_pos=get_safe_y(df_intrinsic['Voltage_sag']))
+    
+    ax_c2 = fig.add_subplot(gs_C[1])
+    if df_ap_ahp is not None and 'decay_area' in df_ap_ahp.columns:
+        plot_bar_scatter(ax_c2, df_ap_ahp, 'Genotype', 'decay_area', 'Genotype', order=['WT', 'GNB1'])
+        ax_c2.set_ylabel('AHP Area\n(mV·ms)')
+        ax_c2.set_title('AHP Decay', fontsize=8)
+        ax_c2.set_box_aspect(1)
+        if df_stats is not None:
+            annotate_from_stats(ax_c2, df_stats, "Fig 2E", "AHP Decay", x1=0, x2=1, y_pos=get_safe_y(df_ap_ahp['decay_area']))
+
+    # Panel D: Example FI Traces (~200pA for WT and GNB1) - Stacked vertically
+    gs_d = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row2[1], hspace=0.1)
+    ax_d_wt = fig.add_subplot(gs_d[0])
+    ax_d_gnb1 = fig.add_subplot(gs_d[1])
+    add_subplot_label(ax_d_wt, "D")
+    
+    if raw_traces_path and master_df is not None:
+        # Convert Cell_IDs in master_df to file format
+        master_df_copy = master_df.copy()
+        master_df_copy['File_Cell_ID'] = master_df_copy['Cell_ID'].apply(convert_cell_id_format)
+        
+        wt_cells = master_df_copy[master_df_copy['Genotype'] == 'WT']['File_Cell_ID'].tolist()
+        gnb1_cells = master_df_copy[master_df_copy['Genotype'] == 'GNB1']['File_Cell_ID'].tolist()
+        
+        wt_trace, wt_current = None, None
+        gnb1_trace, gnb1_current = None, None
+        
+        # Search for WT trace - try different cells with good firing
+        preferred_wt = ['04042024_c1', '02262024_c2', '03142024_c1', '02132024_c2']  # Try cells with more spikes
+        for cell in preferred_wt + wt_cells[:30]:
+            trace, current = find_200pA_trace_direct(cell, raw_traces_path)
+            if trace is not None:
+                wt_trace, wt_current = trace, current
+                break
+        
+        # Search for GNB1 trace - original order
+        preferred_gnb1 = ['02262024_c1', '04042024_c2', '02132024_c1']
+        for cell in preferred_gnb1 + gnb1_cells[:30]:
+            trace, current = find_200pA_trace_direct(cell, raw_traces_path)
+            if trace is not None:
+                gnb1_trace, gnb1_current = trace, current
+                break
+        
+        
+        # Plot WT (top) - normalize to common baseline for alignment
+        if wt_trace is not None:
+            time = np.arange(len(wt_trace)) / 20
+            # Normalize to common baseline
+            baseline_wt = np.mean(wt_trace[int(0.1*len(wt_trace)):int(0.15*len(wt_trace))])
+            common_baseline = -65  # mV
+            wt_trace_aligned = wt_trace - baseline_wt + common_baseline
+            
+            ax_d_wt.plot(time, wt_trace_aligned, 'k-', linewidth=0.8)
+            ax_d_wt.text(0.02, 0.95, 'WT', transform=ax_d_wt.transAxes, fontsize=8, fontweight='bold', va='top')
+        ax_d_wt.set_title('~200 pA', fontsize=8)
+        
+        # Plot GNB1 (bottom) - normalize to same baseline
+        if gnb1_trace is not None:
+            time = np.arange(len(gnb1_trace)) / 20
+            # Normalize to common baseline
+            baseline_gnb1 = np.mean(gnb1_trace[int(0.1*len(gnb1_trace)):int(0.15*len(gnb1_trace))])
+            common_baseline = -65  # mV
+            gnb1_trace_aligned = gnb1_trace - baseline_gnb1 + common_baseline
+            
+            ax_d_gnb1.plot(time, gnb1_trace_aligned, 'r-', linewidth=0.8)
+            ax_d_gnb1.text(0.02, 0.95, 'GNB1', transform=ax_d_gnb1.transAxes, fontsize=8, fontweight='bold', va='top', color='red')
+        
+        # Align both plots using aligned traces
+        max_time = max(len(wt_trace) if wt_trace is not None else 0,
+                      len(gnb1_trace) if gnb1_trace is not None else 0) / 20
+        xlim_start, xlim_end = 150, max_time
+        
+        # Calculate ylim from aligned traces
+        ylim_min = min(wt_trace_aligned.min() if wt_trace is not None else -100, 
+                      gnb1_trace_aligned.min() if gnb1_trace is not None else -100) - 10
+        ylim_max = max(wt_trace_aligned.max() if wt_trace is not None else 50, 
+                      gnb1_trace_aligned.max() if gnb1_trace is not None else 50) + 10
+        
+        ax_d_wt.set_xlim(xlim_start, xlim_end)
+        ax_d_gnb1.set_xlim(xlim_start, xlim_end)
+        ax_d_wt.set_ylim(ylim_min, ylim_max)
+        ax_d_gnb1.set_ylim(ylim_min, ylim_max)
+        
+        ax_d_wt.axis('off')
+        ax_d_gnb1.axis('off')
+        add_scale_bar(ax_d_gnb1, 100, 20, x_pos=0.85, y_pos=0.1)
+    else:
+        ax_d_wt.text(0.5, 0.5, 'Data unavailable', ha='center', va='center', fontsize=8)
+        ax_d_wt.axis('off')
+        ax_d_gnb1.axis('off')
+
+    # Panel E: F-I Curve
+    ax_e = fig.add_subplot(gs_row2[2])
+    add_subplot_label(ax_e, "E")
+    
+    if fi_df_final is not None:
+        for genotype in fi_df_final['Genotype'].unique():
+            subset = fi_df_final[fi_df_final['Genotype'] == genotype]
+            n_cells = len(df_FI[df_FI['Genotype'] == genotype])
+            label_text = f"{genotype} (n={n_cells})"
+            color = COLORS.get(genotype, 'gray')
+            ax_e.errorbar(
+                subset['Current'], subset['mean_rate'], yerr=subset['sem_rate'],
+                label=label_text, color=color, marker='o', capsize=2, markersize=3
+            )
+        ax_e.set_xlabel('Current (pA)')
+        ax_e.set_ylabel('Firing Rate (Hz)')
+        ax_e.spines['top'].set_visible(False)
+        ax_e.spines['right'].set_visible(False)
+        ax_e.set_box_aspect(1)
+        ax_e.legend(loc='upper left', frameon=False, fontsize=8)
+       
+    else:
+        ax_e.text(0.5, 0.5, 'Curve Data Missing', ha='center', color='red')
+    
+    # ---------------------------------------------------------
+    # ROW 3: Panels F (F-I Curve Midpoint) | G (Rheobase) | H (ISI Examples) | I (ISI Adaptation)
+    # ---------------------------------------------------------
+    gs_row3 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=outer_grid[2], width_ratios=[0.22, 0.22, 0.26, 0.30], wspace=0.4)
+    
+    # Panel F: F-I Curve Midpoint
+    ax_f = fig.add_subplot(gs_row3[0])
+    add_subplot_label(ax_f, "F")
+
+    if fi_midpoints_df is not None:
+        plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint', 'Genotype', order=['WT', 'GNB1'])
+        ax_f.set_ylabel('F-I Curve Midpoint (pA)')
+        ax_f.set_title('F-I Midpoint', fontsize=8)
+        ax_f.set_box_aspect(1)
+        if df_stats is not None:
+            annotate_from_stats(ax_f, df_stats, 'Fig 2F', 'F-I Curve Midpoint',
+                                x1=0, x2=1, y_pos=get_safe_y(fi_midpoints_df['FI_Midpoint']))
+    else:
+        ax_f.text(0.5, 0.5, 'Midpoint Data Missing', ha='center', color='red')
+    # if df_FI is not None and 'FI_Slope' in df_FI.columns:
+    #     plot_data = df_FI.dropna(subset=['FI_Slope'])
+    #     plot_bar_scatter(ax_f, plot_data, 'Genotype', 'FI_Slope', 'Genotype', order=['WT', 'GNB1'])
+    #     ax_f.set_ylabel('F-I Curve Slope (Hz/pA)')
+    #     ax_f.set_title('F-I Slope', fontsize=8)
+    #     ax_f.set_box_aspect(1)
+    #     # No stat annotation - not in stats file
+    # else:
+    #     ax_f.text(0.5, 0.5, 'Slope Data Missing', ha='center', color='red')
+
+    # Panel G: Rheobase
+    ax_rheo = fig.add_subplot(gs_row3[1])
+    add_subplot_label(ax_rheo, "G")
+    if df_ap_ahp is not None and 'Rheobase_Current' in df_ap_ahp.columns:
+        plot_data = df_ap_ahp.dropna(subset=['Rheobase_Current'])
+        plot_bar_scatter(ax_rheo, plot_data, 'Genotype', 'Rheobase_Current', 'Genotype', order=['WT', 'GNB1'])
+        ax_rheo.set_ylabel('Rheobase (pA)')
+        ax_rheo.set_title('Rheobase', fontsize=8)
+        ax_rheo.set_box_aspect(1)
+        if df_stats is not None:
+            annotate_from_stats(ax_rheo, df_stats, "Fig 2C", "Rheobase", x1=0, x2=1, y_pos=get_safe_y(plot_data['Rheobase_Current']))
+    else:
+        ax_rheo.text(0.5, 0.5, 'Rheobase Data Missing', ha='center', color='red')
+
+    # Panel H: ISI Example Traces (6 spikes)
+    gs_h = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row3[2], hspace=0.1)
+    ax_h_wt = fig.add_subplot(gs_h[0])
+    ax_h_gnb1 = fig.add_subplot(gs_h[1])
+    add_subplot_label(ax_h_wt, "H")
+    
+    if raw_traces_path and master_df is not None:
+        from plotting_utils import plot_isi_example_traces
+        plot_isi_example_traces(ax_h_wt, ax_h_gnb1, raw_traces_path, master_df, df_ap_ahp)
+    else:
+        ax_h_wt.text(0.5, 0.5, 'ISI Traces Unavailable', ha='center', color='red')
+        ax_h_wt.axis('off')
+        ax_h_gnb1.axis('off')
+    
+    # Panel I: ISI Adaptation
+    ax_i = fig.add_subplot(gs_row3[3])
+    add_subplot_label(ax_i, "I")
+    
+    if isi_df_final is not None and not isi_df_final.empty:
+        for genotype in isi_df_final['Genotype'].unique():
+            subset = isi_df_final[isi_df_final['Genotype'] == genotype]
+            subset = subset[(subset['Spike_Index'] >= 2) & (subset['Spike_Index'] <= 6)]
+            
+            n_cells = len(df_FI[df_FI['Genotype'] == genotype])
+            label_text = f"{genotype} (n={n_cells})"
+            
+            color = COLORS.get(genotype, 'gray')
+            y_col = 'mean_isi' if 'mean_isi' in subset.columns else 'mean'
+            y_err = 'sem_isi' if 'sem_isi' in subset.columns else 'sem'
+            
+            ax_i.errorbar(
+                subset['Spike_Index'], subset[y_col], yerr=subset[y_err],
+                label=label_text, color=color, marker='o', capsize=2, markersize=3
+            )
+        
+        x_ticks = [2, 3, 4, 5, 6]
+        ax_i.set_xticks(x_ticks)
+        ax_i.set_xticklabels(['2', '3', '4', '5', '6'])
+        ax_i.set_xlim(1.5, 6.5)
+        
+        ax_i.set_xlabel('AP Spike Number')
+        ax_i.set_ylabel('ISI (ms)')
+        ax_i.spines['top'].set_visible(False)
+        ax_i.spines['right'].set_visible(False)
+        ax_i.set_box_aspect(1)
+        ax_i.legend(loc='upper left', frameon=False, fontsize=8)
+    else:
+        ax_i.text(0.5, 0.5, ' ISI Data Missing', ha='center', color='red')
+        ax_i.set_title('Spike Rate Adaptation')
+
+    save_current_fig('Figure_2_Physiology')
+
+
+# ==================================================================================================
+# FIGURE 3: MORPHOLOGY
+# ==================================================================================================
+
+
+def plot_figure_3_morphology():
+    print("\n--- Generating Figure 3: Morphology ---")
+    setup_publication_style()
+    
+    # Load Sholl Intersections Data
+    df_sholl = load_data('Morphology_Analysis', 'Sholl_Intersections_Raw.csv')
+    df_cdf = load_data('Morphology_Analysis', 'Sholl_Cumulative_Distributions.csv')
+    df_dend_props = load_data('Morphology_Analysis', 'Dendrite_Properties_All.csv')
+    
+    if df_sholl is None:
+        print("❌ Error: Could not load Sholl data")
+        return
+    
+    if df_cdf is None:
+        print("⚠ Warning: Could not load cumulative distribution data, panels D and E will be empty")
+    
+    if df_dend_props is None:
+        print("⚠ Warning: Could not load dendrite properties data, panels F and G will be empty")
+    
+    
+    # Load Stats
+    df_stats = load_data('Morphology_Analysis', 'Stats_Results_Figure_3.csv')
+        
+    # Separate data by genotype
+    df_wt = df_sholl[df_sholl['Genotype'] == 'WT'].copy()
+    df_gnb1 = df_sholl[df_sholl['Genotype'] == 'GNB1'].copy()
+    
+    # Create figure with 7 panels: A (reconstructions), B (Basal Sholl), C (Apical Sholl), 
+    #                               D (Basal CDF), E (Apical CDF), F (Branch Sum), G (Terminal Branches)
+    fig = plt.figure(figsize=(6.93, 7))  # 17.6cm width, taller for morphology
+    gs = fig.add_gridspec(3, 3, wspace=0.5, hspace=0.6, height_ratios=[1, 1, 1])
+    
+    # Panel A: Placeholder for cell reconstructions (spans 3 rows)
+    ax_reconstructions = fig.add_subplot(gs[:, 0])
+    add_subplot_label(ax_reconstructions, "A")
+    ax_reconstructions.text(0.5, 0.5, 'Cell Reconstructions\n(To be added)', 
+                           ha='center', va='center', fontsize=8, color='gray')
+    ax_reconstructions.set_xticks([])
+    ax_reconstructions.set_yticks([])
+    ax_reconstructions.set_facecolor('#f8f8f8')
+    ax_reconstructions.spines['top'].set_visible(False)
+    ax_reconstructions.spines['right'].set_visible(False)
+    ax_reconstructions.spines['bottom'].set_visible(False)
+    ax_reconstructions.spines['left'].set_visible(False)
+    
+    # Panel B: Basal Dendrites (Sholl)
+    ax_basal = fig.add_subplot(gs[0, 1])
+    add_subplot_label(ax_basal, "B")
+    
+    # Panel C: Apical Dendrites (Sholl)
+    ax_apical = fig.add_subplot(gs[0, 2])
+    add_subplot_label(ax_apical, "C")
+    
+    # Panel D: Basal Cumulative Distribution
+    ax_basal_cdf = fig.add_subplot(gs[1, 1])
+    add_subplot_label(ax_basal_cdf, "D")
+    
+    # Panel E: Apical Cumulative Distribution
+    ax_apical_cdf = fig.add_subplot(gs[1, 2])
+    add_subplot_label(ax_apical_cdf, "E")
+    
+    # Panels F and G will be created as subgrids later when plotting dendritic properties
+    
+    
+    # Plot Basal Dendrites
+    plot_sholl_data(ax_basal, df_wt, 'WT', 'Basal', COLORS['WT'])
+    plot_sholl_data(ax_basal, df_gnb1, 'GNB1', 'Basal', COLORS['GNB1'])
+    ax_basal.set_title('Basal Dendrites', fontsize=9)
+    ax_basal.set_xlabel('Distance from Soma (μm)', fontsize=8)
+    ax_basal.set_ylabel('Number of Intersections', fontsize=8)
+    ax_basal.spines['top'].set_visible(False)
+    ax_basal.spines['right'].set_visible(False)
+    ax_basal.legend(frameon=False, loc='upper right')
+    
+    # Plot Apical Dendrites
+    plot_sholl_data(ax_apical, df_wt, 'WT', 'Apical', COLORS['WT'])
+    plot_sholl_data(ax_apical, df_gnb1, 'GNB1', 'Apical', COLORS['GNB1'])
+    ax_apical.set_title('Apical Dendrites', fontsize=9)
+    ax_apical.set_xlabel('Distance from Soma (μm)', fontsize=8)
+    ax_apical.set_ylabel('Number of Intersections', fontsize=8)
+    ax_apical.spines['top'].set_visible(False)
+    ax_apical.spines['right'].set_visible(False)
+    ax_apical.legend(frameon=False, loc='upper right')
+    
+    # Plot Cumulative Distributions (Combined across sexes)
+    if df_cdf is not None:
+        error_multiplier = 5
+        
+        # Panel D: Basal Cumulative Distribution
+        basal_cdf = df_cdf[df_cdf['Dendrite_Type'] == 'Basal']
+        # Aggregate across sexes for each genotype
+        for genotype, group_df in basal_cdf.groupby('Genotype'):
+            color = COLORS.get(genotype, 'gray')
+            
+            # Average across sexes for each CDF_Bin
+            agg_data = group_df.groupby('CDF_Bin').agg({
+                'Radius_Quantile': 'mean',
+                'Radius_SEM': lambda x: np.sqrt(np.sum(x**2)) / len(x)  # Combined SEM
+            }).reset_index()
+            
+            x = agg_data['Radius_Quantile'].values
+            y = agg_data['CDF_Bin'].values
+            xerr = agg_data['Radius_SEM'].values * error_multiplier
+            xerr = np.nan_to_num(xerr, nan=0.0)
+            
+            ax_basal_cdf.errorbar(x, y, xerr=xerr, fmt='o-', color=color, 
+                                 markersize=1, capsize=1, label=genotype, alpha=0.8, linewidth=0.5)
+        
+        ax_basal_cdf.set_xlabel('Distance from Soma (μm)', fontsize=8)
+        ax_basal_cdf.set_ylabel('Cumulative Probability', fontsize=8)
+        #ax_basal_cdf.set_title('Basal Dendrites - Cumulative Distribution', fontsize=9)
+        ax_basal_cdf.set_ylim(0, 1.05)
+        ax_basal_cdf.set_xlim(0, ax_basal_cdf.get_xlim()[1])
+        ax_basal_cdf.spines['top'].set_visible(False)
+        ax_basal_cdf.spines['right'].set_visible(False)
+        ax_basal_cdf.legend(frameon=False, loc='lower right', fontsize=8)
+        
+        # Add KS Test Stat
+        # Using bracket=False for simple text annotation
+        annotate_from_stats(ax_basal_cdf, df_stats, 'Fig 3D', 'Basal Sholl', 0.1, 0.1, 1.0, bracket=False)
+        
+        # Panel E: Apical Cumulative Distribution
+        apical_cdf = df_cdf[df_cdf['Dendrite_Type'] == 'Apical']
+        # Aggregate across sexes for each genotype
+        for genotype, group_df in apical_cdf.groupby('Genotype'):
+            color = COLORS.get(genotype, 'gray')
+            
+            # Average across sexes for each CDF_Bin
+            agg_data = group_df.groupby('CDF_Bin').agg({
+                'Radius_Quantile': 'mean',
+                'Radius_SEM': lambda x: np.sqrt(np.sum(x**2)) / len(x)  # Combined SEM
+            }).reset_index()
+            
+            x = agg_data['Radius_Quantile'].values
+            y = agg_data['CDF_Bin'].values
+            xerr = agg_data['Radius_SEM'].values * error_multiplier
+            xerr = np.nan_to_num(xerr, nan=0.0)
+            
+            ax_apical_cdf.errorbar(x, y, xerr=xerr, fmt='o-', color=color, 
+                                  markersize=1, capsize=1, label=genotype, alpha=0.8, linewidth=0.5)
+        
+        ax_apical_cdf.set_xlabel('Distance from Soma (μm)', fontsize=8)
+        ax_apical_cdf.set_ylabel('Cumulative Probability', fontsize=8)
+        #ax_apical_cdf.set_title('Apical Dendrites ', fontsize=9)
+        ax_apical_cdf.set_ylim(0, 1.05)
+        ax_apical_cdf.set_xlim(0, ax_apical_cdf.get_xlim()[1])
+        ax_apical_cdf.spines['top'].set_visible(False)
+        ax_apical_cdf.spines['right'].set_visible(False)
+        ax_apical_cdf.legend(frameon=False, loc='lower right', fontsize=8)
+        
+        # Add KS Test Stat
+        annotate_from_stats(ax_apical_cdf, df_stats, 'Fig 3E', 'Apical Sholl', 0.1, 0.1, 1.0, bracket=False)
+    else:
+        # Add placeholders if CDF data is not available
+        ax_basal_cdf.text(0.5, 0.5, 'CDF Data Unavailable', ha='center', va='center', color='gray')
+        ax_basal_cdf.set_xticks([])
+        ax_basal_cdf.set_yticks([])
+        
+        ax_apical_cdf.text(0.5, 0.5, 'CDF Data Unavailable', ha='center', va='center', color='gray')
+        ax_apical_cdf.set_xticks([])
+        ax_apical_cdf.set_yticks([])
+    
+    # Synchronize X-axis max values for panels that show the same data
+    # B (ax_basal) and D (ax_basal_cdf) should have the same X-max
+    # C (ax_apical) and E (ax_apical_cdf) should have the same X-max
+    basal_xmax = max(ax_basal.get_xlim()[1], ax_basal_cdf.get_xlim()[1])
+    ax_basal.set_xlim(0, basal_xmax)
+    ax_basal_cdf.set_xlim(0, basal_xmax)
+    
+    apical_xmax = max(ax_apical.get_xlim()[1], ax_apical_cdf.get_xlim()[1])
+    ax_apical.set_xlim(0, apical_xmax)
+    ax_apical_cdf.set_xlim(0, apical_xmax)
+    
+    # Plot Dendritic Properties
+    if df_dend_props is not None:
+        # Create 2x2 grid for F and G
+        gs_F = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[2, 1], wspace=0.6)
+        gs_G = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[2, 2], wspace=0.6)
+        
+        # Panel F: Branch Sum (Total Branch Length)
+        # F1: Basal Branch Sum
+        ax_f_basal = fig.add_subplot(gs_F[0])
+        add_subplot_label(ax_f_basal, "F")
+        df_basal_props = df_dend_props[df_dend_props['Dendrite_Type'] == 'Basal']
+        max_h = plot_bar_scatter(ax_f_basal, df_basal_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'GNB1'])
+        annotate_from_stats(ax_f_basal, df_stats, 'Fig 3F (Left)', 'Basal Total Branch Length', 0, 1, max_h)
+        
+        ax_f_basal.set_ylabel('Total Branch Length ($\mu$m)', fontsize=8)
+        ax_f_basal.set_title('Basal', fontsize=8)
+        ax_f_basal.set_xlabel('')
+        
+        # F2: Apical Branch Sum
+        ax_f_apical = fig.add_subplot(gs_F[1])
+        df_apical_props = df_dend_props[df_dend_props['Dendrite_Type'] == 'Apical']
+        max_h = plot_bar_scatter(ax_f_apical, df_apical_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'GNB1'])
+        annotate_from_stats(ax_f_apical, df_stats, 'Fig 3F (Right)', 'Apical Total Branch Length', 0, 1, max_h)
+        
+        ax_f_apical.set_ylabel('')
+        ax_f_apical.set_title('Apical', fontsize=8)
+        ax_f_apical.set_xlabel('')
+        
+        # Panel G: Number of Terminal Branches
+        # G1: Basal Terminal Branches
+        ax_g_basal = fig.add_subplot(gs_G[0])
+        add_subplot_label(ax_g_basal, "G")
+        max_h = plot_bar_scatter(ax_g_basal, df_basal_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'GNB1'])
+        annotate_from_stats(ax_g_basal, df_stats, 'Fig 3G (Left)', 'Basal Terminal Branches', 0, 1, max_h)
+        
+        ax_g_basal.set_ylabel('Number of Terminal Branches', fontsize=8)
+        ax_g_basal.set_title('Basal', fontsize=8)
+        ax_g_basal.set_xlabel('')
+        
+        # G2: Apical Terminal Branches
+        ax_g_apical = fig.add_subplot(gs_G[1])
+        max_h = plot_bar_scatter(ax_g_apical, df_apical_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'GNB1'])
+        annotate_from_stats(ax_g_apical, df_stats, 'Fig 3G (Right)', 'Apical Terminal Branches', 0, 1, max_h)
+        
+        ax_g_apical.set_ylabel('')
+        ax_g_apical.set_title('Apical', fontsize=8)
+        ax_g_apical.set_xlabel('')
+    else:
+        # Add placeholders if dendrite properties data is not available
+        # These placeholders need to be created on actual axes, not just variables
+        # For simplicity, let's assume ax_branch_sum and ax_terminal_branches are defined
+        # or create new placeholder axes if they are not.
+        # Given the structure, it's likely these were meant to be on the subplots F and G.
+        # Let's create placeholder axes for F and G if df_dend_props is None.
+        
+        # Create placeholder axes for F and G
+        ax_f_placeholder = fig.add_subplot(gs[2, 1])
+        ax_g_placeholder = fig.add_subplot(gs[2, 2])
+
+        ax_f_placeholder.text(0.5, 0.5, 'Dendrite Properties\nData Unavailable', 
+                          ha='center', va='center', color='gray')
+        ax_f_placeholder.set_xticks([])
+        ax_f_placeholder.set_yticks([])
+        ax_f_placeholder.set_title('Branch Sum', fontsize=8)
+        
+        ax_g_placeholder.text(0.5, 0.5, 'Dendrite Properties\nData Unavailable', 
+                                 ha='center', va='center', color='gray')
+        ax_g_placeholder.set_xticks([])
+        ax_g_placeholder.set_yticks([])
+        ax_g_placeholder.set_title('Terminal Branches', fontsize=8)
+    
+    save_current_fig('Figure_3_Morphology')
+
+# ==================================================================================================
+# FIGURE 4: E:I BALANCE
+# ==================================================================================================
+
+def plot_figure_4_EI():
+    """
+    Figure 4: E:I Balance Across Three Pathways (ECIII/Perforant, CA3/Schaffer, SO/Basal)
+    
+    Layout: 5 rows × 3 columns
+    - Row 1: WT example traces (ECIII | CA3 | SO)
+    - Row 2: GNB1 example traces (legend centered below)
+    - Row 3 (C): Gabazine - WT vs GNB1 overlaid
+    - Row 4 (D): Gabazine Supralinearity (WT black vs GNB1 red)
+    - Row 5 (E): E:I imbalance (WT black vs GNB1 red)
+    """
+    print("\\n--- Generating Figure 4: E:I Balance (3 Pathways) ---")
+    setup_publication_style()
+    
+    # Load E:I traces and amplitudes
+    df_traces = pd.read_pickle('paper_data/E_I_data/E_I_traces_for_plotting.pkl')
+    df_amplitudes = pd.read_csv('paper_data/E_I_data/E_I_amplitudes.csv')
+    
+    # Load statistics from corrected R scripts (condition-specific corrections)
+    
+    # # EI_Amplitudes Genotype comparison (corrected within condition)
+    # stats_genotype_anova = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Genotype_ANOVA.csv'
+    # stats_genotype_posthoc = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Genotype_PostHoc.csv'
+    # df_stats_genotype_anova = None
+    # df_stats_genotype_posthoc = None
+    # if os.path.exists(stats_genotype_anova):
+    #     df_stats_genotype_anova = pd.read_csv(stats_genotype_anova)
+    #     print(f"✓ Loaded EI_Amplitudes Genotype ANOVA")
+    # if os.path.exists(stats_genotype_posthoc):
+    #     df_stats_genotype_posthoc = pd.read_csv(stats_genotype_posthoc)
+    #     print(f"✓ Loaded EI_Amplitudes Genotype Post-Hoc")
+    
+    # # EI_Amplitudes Drug effect (Control vs Gabazine, corrected within genotype)
+    # stats_drug_anova = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Drug_ANOVA.csv'
+    # stats_drug_posthoc = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Drug_PostHoc.csv'
+    # df_stats_drug_anova = None
+    # df_stats_drug_posthoc = None
+    # if os.path.exists(stats_drug_anova):
+    #     df_stats_drug_anova = pd.read_csv(stats_drug_anova)
+    #     print(f"✓ Loaded EI_Amplitudes Drug ANOVA")
+    # if os.path.exists(stats_drug_posthoc):
+    #     df_stats_drug_posthoc = pd.read_csv(stats_drug_posthoc)
+    #     print(f"✓ Loaded EI_Amplitudes Drug Post-Hoc")
+    
+    # # EI_Amplitudes Gabazine vs Expected comparison
+    # stats_gab_expected_anova = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_GabazineVsExpected_ANOVA.csv'
+    # stats_gab_expected_posthoc = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_GabazineVsExpected_PostHoc.csv'
+    # df_stats_gab_expected_anova = None
+    # df_stats_gab_expected_posthoc = None
+    # if os.path.exists(stats_gab_expected_anova):
+    #     df_stats_gab_expected_anova = pd.read_csv(stats_gab_expected_anova)
+    #     print(f"✓ Loaded EI_Amplitudes GabazineVsExpected ANOVA")
+    # if os.path.exists(stats_gab_expected_posthoc):
+    #     df_stats_gab_expected_posthoc = pd.read_csv(stats_gab_expected_posthoc)
+    #     print(f"✓ Loaded EI_Amplitudes GabazineVsExpected Post-Hoc")
+    
+    # # EI_Supralinearity stats
+    # stats_supralin_anova = 'paper_data/E_I_data/Figure_4_EI_Supralinearity_ANOVA.csv'
+    # stats_supralin_posthoc = 'paper_data/E_I_data/Figure_4_EI_Supralinearity_PostHoc.csv'
+    # df_stats_supralin_anova = None
+    # df_stats_supralin_posthoc = None
+    # if os.path.exists(stats_supralin_anova):
+    #     df_stats_supralin_anova = pd.read_csv(stats_supralin_anova)
+    #     print(f"✓ Loaded EI_Supralinearity ANOVA")
+    # if os.path.exists(stats_supralin_posthoc):
+    #     df_stats_supralin_posthoc = pd.read_csv(stats_supralin_posthoc)
+    #     print(f"✓ Loaded EI_Supralinearity Post-Hoc")
+    
+    # # EI_Imbalance stats
+    # stats_imbalance_anova = 'paper_data/E_I_data/Figure_4_EI_Imbalance_ANOVA.csv'
+    # stats_imbalance_posthoc = 'paper_data/E_I_data/Figure_4_EI_Imbalance_PostHoc.csv'
+    # df_stats_imbalance_anova = None
+    # df_stats_imbalance_posthoc = None
+    # if os.path.exists(stats_imbalance_anova):
+    #     df_stats_imbalance_anova = pd.read_csv(stats_imbalance_anova)
+    #     print(f"✓ Loaded EI_Imbalance ANOVA")
+    # if os.path.exists(stats_imbalance_posthoc):
+    #     df_stats_imbalance_posthoc = pd.read_csv(stats_imbalance_posthoc)
+    #     print(f"✓ Loaded EI_Imbalance Post-Hoc")
+    
+    # if df_traces is None or df_traces.empty:
+    #     print("❌ Error: Could not load E:I traces")
+    #     return
+    
+    # if df_amplitudes is None or df_amplitudes.empty:
+    #     print("❌ Error: Could not load E:I amplitudes")
+    #     return
+    
+    # Convert 17.5 cm to inches
+    fig_width = 17.5 / 2.54  # = 6.89 inches
+    fig_height = 7.5  # inches (reduced)
+    
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    
+    # Create 5×3 grid
+    gs = fig.add_gridspec(5, 3,
+                         wspace=0.35, hspace=0.65,
+                         left=0.08, right=0.98,
+                         top=0.96, bottom=0.05,
+                         height_ratios=[1, 1, 1.2, 1, 1])
+    
+    # Define pathways
+    pathways = [
+        ('ECIII', 'perforant', 'channel_1'),
+        ('CA3', 'schaffer', 'channel_2'),
+        ('SO', 'basal', 'Basal_Stratum_Oriens')
+    ]
+    
+    # =========================================================================
+    # ROW 1: WT Example Traces
+    # =========================================================================
+    for col, (label, pathway, channel) in enumerate(pathways):
+        ax = fig.add_subplot(gs[0, col])
+        if col == 0:
+            add_subplot_label(ax, "A", fontsize=8, fontweight='bold')
+        
+        if pathway == 'basal':
+            plot_ei_averages(ax, df_traces, 'WT', 10, f'{label} - WT', 
+                           add_legend=False, pathway=pathway)
+        else:
+            plot_ei_averages(ax, df_traces, 'WT', 10, f'{label} - WT',
+                           add_legend=False, pathway=pathway)
+        
+        if col > 0:
+            ax.set_title(label, fontsize=8, fontweight='bold', loc='center')
+    
+    # =========================================================================
+    # ROW 2: GNB1 Example Traces
+    # =========================================================================
+    for col, (label, pathway, channel) in enumerate(pathways):
+        ax = fig.add_subplot(gs[1, col])
+        if col == 0:
+            add_subplot_label(ax, "B", fontsize=8, fontweight='bold')
+        
+        if pathway == 'basal':
+            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - GNB1', pathway=pathway, add_legend=False)
+        else:
+            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - GNB1', pathway=pathway, add_legend=False)
+    
+    # Add custom legend CENTERED below row 2
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color='dimgray', lw=1.5, label='Control: Measured - With Inhibition'),
+        Line2D([0], [0], color='black', lw=1.5, label='Gabazine: Measured - No Inhibition'),
+        Line2D([0], [0], color='gray', lw=1.5, linestyle='--', label='Expected - Linear Summation')
+    ]
+    
+    fig.legend(handles=legend_elements, loc='upper center',  
+              bbox_to_anchor=(0.5, 0.62), ncol=3, frameon=False, fontsize=7)
+    
+    # =========================================================================
+    # ROW 3 (C): Gabazine - WT vs GNB1 Overlaid
+    # =========================================================================
+    ymin_r3, ymax_r3 = 0, 0
+    
+    if 'Gabazine_Amplitude' in df_amplitudes.columns:
+        grouped = df_amplitudes.groupby(['Genotype', 'Pathway', 'ISI'])['Gabazine_Amplitude'].agg(['mean', 'sem'])
+        upper = (grouped['mean'] + grouped['sem']).max()
+        ymax_r3 = upper * 1.1
+        ymin_r3 = 0
+    
+    for col, (label, pathway, channel) in enumerate(pathways):
+        ax = fig.add_subplot(gs[2, col])
+        if col == 0:
+            add_subplot_label(ax, "C", fontsize=8, fontweight='bold')
+        
+        pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
+                       'basal': 'Basal_Stratum_Oriens'}[pathway]
+        
+        # Plot both WT and GNB1 overlaid - use Between-Genotype ANOVA stats
+        plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name)
+        
+        ax.set_ylim(ymin_r3, ymax_r3)
+        if col > 0:
+            ax.set_ylabel('')
+
+    # =========================================================================
+    # ROW 4 (D): Gabazine Supralinearity
+    # =========================================================================
+    ymin_r4, ymax_r4 = -2, 2
+    if 'Gabazine_Supralinearity' in df_amplitudes.columns:
+        grouped = df_amplitudes.groupby(['Genotype', 'Pathway', 'ISI'])['Gabazine_Supralinearity'].agg(['mean', 'sem'])
+        upper = (grouped['mean'] + grouped['sem']).max()
+        lower = (grouped['mean'] - grouped['sem']).min()
+        
+        span = upper - lower
+        ymax_r4 = upper + span * 0.1
+        ymin_r4 = lower - span * 0.1
+        
+    for col, (label, pathway, channel) in enumerate(pathways):
+        ax = fig.add_subplot(gs[3, col])
+        if col == 0:
+            add_subplot_label(ax, "D", fontsize=8, fontweight='bold')
+        
+        pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
+                       'basal': 'Basal_Stratum_Oriens'}[pathway]
+        # Use Supralinearity/EI stats
+        plot_metric_comparison(ax, df_amplitudes, pathway_name, 
+                             'Gabazine_Supralinearity', 'Supralinearity (mV)',
+                             add_legend=False)
+        
+        ax.set_ylim(ymin_r4, ymax_r4)
+        if col > 0:
+            ax.set_ylabel('')
+    
+    # =========================================================================
+    # ROW 5 (E): E:I Imbalance
+    # =========================================================================
+    ymin_r5, ymax_r5 = 0, 1.2
+    if 'E_I_Imbalance' in df_amplitudes.columns:
+        grouped = df_amplitudes.groupby(['Genotype', 'Pathway', 'ISI'])['E_I_Imbalance'].agg(['mean', 'sem'])
+        upper = (grouped['mean'] + grouped['sem']).max()
+        lower = (grouped['mean'] - grouped['sem']).min()
+        
+        span = upper - lower
+        ymax_r5 = upper + span * 0.1
+        ymin_r5 = max(0, lower - span * 0.1)
+
+    for col, (label, pathway, channel) in enumerate(pathways):
+        ax = fig.add_subplot(gs[4, col])
+        if col == 0:
+            add_subplot_label(ax, "E", fontsize=8, fontweight='bold')
+        
+        pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
+                       'basal': 'Basal_Stratum_Oriens'}[pathway]
+        # Use Supralinearity/EI stats
+        plot_metric_comparison(ax, df_amplitudes, pathway_name,
+                             'E_I_Imbalance', 'E:I Imbalance',
+                             add_legend=False)
+                             
+        ax.set_ylim(ymin_r5, ymax_r5)
+        if col > 0:
+            ax.set_ylabel('')
+    
+    save_current_fig('Figure_4_EI')
+
+# ==================================================================================================
+
+# ==================================================================================================
+# FIGURE 6: DENDRITIC EXCITABILITY
+# ==================================================================================================
+
+def plot_figure_6_dendritic():
+    """
+    Figure 6: Dendritic Excitability (Restructured)
+    
+    Panel A (Rows 1-2): Raw Theta Burst traces (WT vs GNB1) for ECIII, CA3, Both.
+    Panel B (Rows 3-4): Processed (from Pickle) + Expected traces (WT vs GNB1).
+    Panel C (Row 5): Plateau Area bar plots
+    Panel D (Row 6): Single WT Example - Difference Traces
+    Panel E (Row 7): Averaged Supralinearity Traces
+    Panel F (Row 8): Spike Rate Across Theta Cycles
+    """
+    
+    print("\\n--- Generating Figure 6: Dendritic Excitability ---")
+    setup_publication_style()
+    
+    # Load AUC Data for Panel F (needed for filtering inside helper)
+    auc_data_path = os.path.join('paper_data', 'supralinearity', 'Supralinear_AUC_Total.csv')
+    df_auc_total = None
+    if os.path.exists(auc_data_path):
+        df_auc_total = pd.read_csv(auc_data_path)
+    
+    # PREPARE DATA (Logic moved to plotting_utils)
+    raw_data, processed_stats, plateau_df, df_auc_total, supralin_traces = prepare_figure_6_data(df_auc_total)
+    
+    # Re-define config variables for plotting calls (matching helper)
+    acq_freq = 20000
+    start_ms = 400
+    end_ms = 1500
+    start_idx = int(start_ms * acq_freq / 1000)
+    end_idx = int(end_ms * acq_freq / 1000)
+
+    # 4. Create Figure
+    # -------------------------------------------------------------------------
+    fig = plt.figure(figsize=(6.89, 11))
+    gs = fig.add_gridspec(8, 3, hspace=0.6, wspace=0.3)
+    
+    cols = ['Perforant', 'Schaffer', 'Both']
+    col_titles = ['ECIII (Perforant)', 'CA3 (Schaffer)', 'Both Pathways']
+    
+    # 5. Plot Panels Using Modular Functions
+    # -------------------------------------------------------------------------
+    
+    # Panel A: Raw Traces
+    plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq, start_idx, end_idx)
+    
+    # Panel B: Averaged + Expected Traces
+    plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq, start_idx, end_idx)
+
+    # Panel C: Plateau Area Bar Plots
+    # Panel C: Plateau Area Bar Plots
+    stats_path = os.path.join('paper_data', 'Plateau_data', 'Stats_Results_Figure_6.csv')
+    df_stats = pd.read_csv(stats_path) if os.path.exists(stats_path) else None
+    
+    if plateau_df is not None and not plateau_df.empty:
+        plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats)
+    else:
+        ax_c = fig.add_subplot(gs[4, :])
+        add_subplot_label(ax_c, "C")
+        ax_c.text(0.5, 0.5, "Plateau data not found (or empty)", ha='center', va='center')
+        ax_c.axis('off')
+
+    # Panel D: Single WT Example
+    start_idx_d = int(400 * acq_freq / 1000)
+    end_idx_d = int(1500 * acq_freq / 1000)
+    
+    # supralin_traces is already loaded via prepare_figure_6_data
+    
+    master_df_temp = pd.read_csv('master_df.csv', low_memory=False)
+    plot_example_difference_traces(fig, gs, supralin_traces, master_df_temp, start_idx_d, end_idx_d)
+
+    # Panel E: Averaged Supralinearity Traces
+    if supralin_traces:
+        plot_averaged_difference_traces(fig, gs, supralin_traces, master_df_temp, start_idx_d, end_idx_d)
+    else:
+        ax_e = fig.add_subplot(gs[6, :])
+        add_subplot_label(ax_e, "E")
+        ax_e.text(0.5, 0.5, "Supralinearity traces not found", ha='center', va='center')
+        ax_e.axis('off')
+
+    # Panel F: Supralinear Total AUC (Bar plot like Panel C)
+    # df_auc_total is already loaded and filtered above to match Panel C cells
+    supralin_stats_path = os.path.join('paper_data', 'Plateau_data', 'Stats_Results_Figure_6.csv')
+    
+    if df_auc_total is not None and not df_auc_total.empty:
+        df_stats_full = pd.read_csv(supralin_stats_path) if os.path.exists(supralin_stats_path) else None
+        plot_supralinear_auc_bars_fig6(fig, gs, df_auc_total, df_stats_full)
+    else:
+        ax_f = fig.add_subplot(gs[7, :])
+        add_subplot_label(ax_f, "F")
+        ax_f.text(0.5, 0.5, "Supralinearity AUC data not found", ha='center', va='center')
+        ax_f.axis('off')
+
+    save_current_fig('Figure_6_Dendritic')
+
+# ==================================================================================================
+# FIGURE 6: GIRK Channel Analysis (ML297 / ETX Effects)
+# ==================================================================================================
+
+def plot_figure_7_GIRK():
+    """
+    Figure 7: GIRK Channel Analysis (ML297 / ETX Effects)
+    New Layout (2 Rows):
+    Panel A: ML297 Traces (WT/GNB1) + Delta Quantification
+    Panel B: ETX Traces (WT/GNB1) + Delta Quantification
+    """
+    print("\n--- Generating Figure 7: GIRK Channel Analysis ---")
+    setup_publication_style()
+    
+    # Load Delta Data
+    delta_csv_path = 'paper_data/Plateau_data/Plateau_Delta_GIRK.csv'
+    df_delta = None
+    if os.path.exists(delta_csv_path):
+        df_delta = pd.read_csv(delta_csv_path)
+    else:
+        print("⚠ Warning: Plateau_Delta_GIRK.csv not found. Run analysis script.")
+
+    # Load Stats
+    stats_path = 'paper_data/Plateau_data/Stats_Results_Figure_7.csv'
+    df_stats = None
+    if os.path.exists(stats_path):
+        df_stats = pd.read_csv(stats_path)
+    
+    # Load Traces
+    trace_path = 'paper_data/Plateau_data/All_Plateau_Traces.pkl'
+    plateau_traces = {}
+    if os.path.exists(trace_path):
+        plateau_traces = pd.read_pickle(trace_path)
+    
+    # Setup Figure
+    fig = plt.figure(figsize=(6.89, 5)) # Shorter height makes plots wider aspect
+    gs = fig.add_gridspec(2, 3, hspace=0.4, wspace=0.4, width_ratios=[1.3, 1.3, 1])
+    
+    # =========================================================================
+    # ROW 1 - PANEL A: ML297 (After = Yellow)
+    # =========================================================================
+    if 'Before_ML297' in plateau_traces and 'After_ML297' in plateau_traces:
+        # Col 0: WT
+        ax_a1 = fig.add_subplot(gs[0, 0])
+        add_subplot_label(ax_a1, "A")
+        plot_traces_GIRK_v2(ax_a1, plateau_traces['Before_ML297'], plateau_traces['After_ML297'], 
+                            'WT', 'ML297', after_color='gold', add_legend=True, add_scale=True)
+        
+        # Col 1: GNB1
+        ax_a2 = fig.add_subplot(gs[0, 1])
+        plot_traces_GIRK_v2(ax_a2, plateau_traces['Before_ML297'], plateau_traces['After_ML297'], 
+                            'GNB1', 'ML297', after_color='gold', add_legend=False, add_scale=False)
+    
+    # Col 2: Delta Quantification
+    ax_a3 = fig.add_subplot(gs[0, 2])
+    if df_delta is not None:
+        plot_girk_delta_bars(ax_a3, df_delta, 'ML297', df_stats)
+    
+    # =========================================================================
+    # ROW 2 - PANEL B: ETX (After = Red)
+    # =========================================================================
+    if 'Before_ETX' in plateau_traces and 'After_ETX' in plateau_traces:
+        # Col 0: WT
+        ax_b1 = fig.add_subplot(gs[1, 0])
+        add_subplot_label(ax_b1, "B")
+        plot_traces_GIRK_v2(ax_b1, plateau_traces['Before_ETX'], plateau_traces['After_ETX'], 
+                            'WT', 'ETX', after_color='blue', add_legend=True, add_scale=True)
+        
+        # Col 1: GNB1
+        ax_b2 = fig.add_subplot(gs[1, 1])
+        plot_traces_GIRK_v2(ax_b2, plateau_traces['Before_ETX'], plateau_traces['After_ETX'], 
+                            'GNB1', 'ETX', after_color='blue', add_legend=False, add_scale=False)
+
+    # Col 2: Delta Quantification
+    ax_b3 = fig.add_subplot(gs[1, 2])
+    if df_delta is not None:
+        plot_girk_delta_bars(ax_b3, df_delta, 'ETX', df_stats)
+
+    save_current_fig('Figure_7_GIRK')
+
+
+# ==================================================================================================
+# FIGURE 5: GABAb Analysis (Schaffer / Perforant Pathways)
+# ==================================================================================================
+
+def plot_figure_5_GABAb():
+    """
+    Figure 5: GABAb Analysis
+    Row 1: Traces - ECIII (Perforant, A) | CA3 Apical (Schaffer, B) | CA3 Basal (C)
+    Row 2: Quantifications - ECIII (D) | CA3 Apical (E) | CA3 Basal (F)
+    Row 3: Baclofen - Diagram (G) | WT Vm Traces (H left) | GNB1 Vm Traces (H right)
+    Row 4: Vm Change Quantification (I)
+    """
+    print("\n--- Generating Figure 5: GABAb Analysis ---")
+    setup_publication_style()
+    
+    gabab_df = pd.read_csv('paper_data/gabab_analysis/GABAb_Analysis_Metrics.csv')
+    
+    # Load statistical results if available
+    df_stats = None
+    stats_file = 'paper_data/gabab_analysis/Stats_Results_Figure_5.csv'
+    if os.path.exists(stats_file):
+        df_stats = pd.read_csv(stats_file)
+        print(f"✓ Loaded Figure 5 statistics: {len(df_stats)} comparisons")
+    else:
+        print("⚠ Note: Run Analyze_Stats_Python.py to generate statistical annotations")
+    
+    trace_path = 'paper_data/gabab_analysis/GABAb_Individual_Traces_Hierarchical.pkl'
+    gabab_traces = {}
+    if os.path.exists(trace_path):
+        gabab_traces = pd.read_pickle(trace_path)
+    
+    # Filter for Gabazine condition only (case-insensitive)
+    gabab_gab = gabab_df[gabab_df['Condition'].str.lower() == 'gabazine'].copy()
+    gabab_gab = gabab_gab.drop_duplicates(subset=['Cell_ID', 'Channel_Name'])
+    
+    # Figure dimensions: 3 rows × 3 columns
+    fig = plt.figure(figsize=(6.5, 8.5))
+    gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.3, 
+                         left=0.08, right=0.98, top=0.96, bottom=0.05,
+                         height_ratios=[1, 1, 1.2])
+    
+    # Only Slow IPSP Area metric
+    metric_col = 'Integral_mV_ms'
+    metric_ylabel = 'Slow IPSP Area\n(mV·ms)'
+    
+    # ---------------------------------------------------------
+    # ROW 1: Traces for all 3 pathways
+    # ---------------------------------------------------------
+    pathways_traces = [
+        ('Perforant Path', 'ECIII (Perforant)', 0, 'A', 'Perforant'),
+        ('Schaffer Collateral', 'CA3 Apical (Schaffer)', 1, 'B', 'Schaffer'),
+        ('Stratum Oriens', 'CA3 Basal', 2, 'C', 'Basal'),
+    ]
+    
+    for pathway_key, pathway_label, col, trace_label, pathway_match in pathways_traces:
+        ax_trace = fig.add_subplot(gs[0, col])
+        title = f'Unitary EPSP (300ms ISI)\n{pathway_label}'
+        plot_gabab_traces(ax_trace, gabab_traces, pathway_key, title, trace_label, gabab_gab)
+    
+    # ---------------------------------------------------------
+    # ROW 2: Quantifications for all 3 pathways
+    # ---------------------------------------------------------
+    pathways_metrics = [
+        ('Perforant Path', 0, 'D', 'Perforant'),
+        ('Schaffer Collateral', 1, 'E', 'Schaffer'),
+        ('Stratum Oriens', 2, 'F', 'Basal'),
+    ]
+    
+    for pathway_key, col, metric_label, pathway_match in pathways_metrics:
+        ax_metric = fig.add_subplot(gs[1, col])
+        plot_gabab_metric_bar(ax_metric, gabab_gab, pathway_key, metric_col, metric_ylabel, 
+                             metric_label, df_stats, pathway_match)
+    
+    # ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # ROW 3: Baclofen Effects (Diagram G | Traces H | Stats I)
+    # ---------------------------------------------------------
+    
+    # --- Panel G: Diagram Placeholder ---
+    ax_diagram = fig.add_subplot(gs[2, 0])
+    add_subplot_label(ax_diagram, 'G')
+    ax_diagram.text(0.5, 0.5, 'Diagram', ha='center', va='center', fontsize=10, 
+                    color='gray', style='italic')
+    ax_diagram.set_xlim(0, 1)
+    ax_diagram.set_ylim(0, 1)
+    ax_diagram.axis('off')
+    
+    # --- Panel H: Baclofen Vm Example Traces (Stacked) ---
+    vm_traces_path = 'paper_data/gabab_analysis/Baclofen_Vm_Example_Traces.pkl'
+    ax_traces = fig.add_subplot(gs[2, 1])
+    plot_baclofen_vm_traces(ax_traces, vm_traces_path, label='H')
+    
+    # --- Panel I: Vm Change Quantification ---
+    vm_csv = 'paper_data/gabab_analysis/Baclofen_Vm_Change.csv'
+    ax_vm = fig.add_subplot(gs[2, 2])
+    plot_gabab_vm_change(ax_vm, vm_csv, "I", df_stats=df_stats)
+    
+    save_current_fig('Figure_5_GABAb')
+
+
+def plot_supplemental_figure_1():
+    """
+    Supplemental Figure 1: Full E:I Breakdown (Control, Gabazine, Expected, Est. Inhibition)
+    Separate panels for WT and GNB1 across 3 pathways.
+    """
+    print("\n--- Generating Supplemental Figure 1: Full E:I Breakdown ---")
+    
+    # Load data
+    ei_amp_path = 'paper_data/E_I_data/E_I_amplitudes.csv'
+    if not os.path.exists(ei_amp_path):
+        print(f"❌ Error: {ei_amp_path} not found")
+        return
+        
+    df = pd.read_csv(ei_amp_path)
+    
+    # WIDTH constraint: max 17.5 cm, explicitly made smaller as requested
+    fig_width = 15 / 2.54 
+    fig_height = 5  # inches - adjusted for square aspect ratio
+    
+    # Increase bottom margin for legend
+    fig, axes = plt.subplots(2, 3, figsize=(fig_width, fig_height), sharex=False, sharey=True)
+    fig.subplots_adjust(wspace=0.35, hspace=0.35, left=0.08, right=0.98, top=0.9, bottom=0.15)
+    
+    # Remove top/right spines for all
+    for ax in axes.flat:
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.tick_params(labelleft=True)  # Force y-labels to be visible with sharey=True
+    
+    pathways = [
+        ('Perforant', 'Perforant'),
+        ('Schaffer', 'Schaffer'),
+        ('Basal SO', 'Basal_Stratum_Oriens')
+    ]
+    
+    genotypes = ['WT', 'GNB1']
+    
+    metrics = [
+        ('Control_Amplitude', 'Measured (With Inhibition)', 'black'),
+        ('Gabazine_Amplitude', 'Measured (No Inhibition)', 'magenta'),
+        ('Expected_EPSP_Amplitude', 'Expected (Linear Summation)', 'grey')]
+    
+    isi_order = [300, 100, 50, 25, 10]
+
+    plot_supplemental_figure_1_helper(isi_order, metrics, pathways, genotypes, df, axes)    
+    # --- Custom Legend at Bottom ---
+    legend_elements = [
+        Line2D([0], [0], color='black', marker='o', lw=1.5, label='Measured - With Inhibition'),
+        Line2D([0], [0], color='magenta', marker='o', lw=1.5, label='Measured - No Inhibition'),
+        Line2D([0], [0], color='skyblue', marker='o', lw=1.5, label='Inhibition (No Inhibition - With Inhibition)'),
+        Line2D([0], [0], color='grey', marker='o', lw=1.5, linestyle='--', label='Expected - Linear Summation')
+    ]
+    
+    fig.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, 0.001),
+              ncol=2, frameon=False, fontsize=8)
+
+    save_current_fig('Supplemental_Figure_1_EI_Breakdown')
+
+
+def plot_supplemental_figure_2():
+    """
+    Supplemental Figure 2: Pie Chart of number of births by genotype and sex
+    """
+
+    print("\n--- Generating Supplemental Figure 2: Births by Genotype ---")
+
+
+    master_birth_df = pd.read_csv('Master_DF_littermate_Sex.csv')
+
+    # WIDTH constraint: max 17.5 cm, explicitly made smaller as requested
+    fig_width = 15 / 2.54 
+    fig_height = 5  # inches - adjusted for square aspect ratio
+    
+    # Increase bottom margin for legend
+    fig, axes = plt.subplots(1, 2, figsize=(fig_width, fig_height), sharex=False, sharey=True)
+    fig.subplots_adjust(wspace=0.35, hspace=0.35, left=0.08, right=0.98, top=0.9, bottom=0.15)
+
+    df = pd.DataFrame(master_birth_df)
+
+    group_counts = df.groupby("Genotype").size()
+
+    labels = [f"{genotype}" for genotype in group_counts.index]
+    sizes = group_counts.values
+
+    axes[0].pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
+    axes[0].set_title("Distribution of Genotypes (WT vs I80T/+) ") 
+
+    group_counts = df.groupby(["Genotype", "Sex"]).size()
+
+    labels = [f"{genotype} {sex}" for genotype, sex in group_counts.index]
+    sizes = group_counts.values
+
+    axes[1].pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
+    axes[1].set_title("Distribution of WT and I80T/+ Litters by Sex") 
+
+    save_current_fig('Supplemental_Figure_2_Births_By_Genotype')
+
+def plot_supplemental_figure_3():
+    """
+    Supplemental Figure 3: Protein Levels of WT and I80T/+ in Hippocampus
+    """
+
+    print("\n--- Generating Supplemental Figure 3: Protein Levels ---")
+
+    protein_df = pd.read_csv('paper_data/GNB1_Protein_Levels_Hippocampus.csv')
+    
+    # Load Stats
+    stats_path = 'paper_data/Stats_Results_Supplemental_Figure_3.csv'
+    df_stats = None
+    if os.path.exists(stats_path):
+        df_stats = pd.read_csv(stats_path)
+    
+    fig_width = 8.5 / 2.54 
+    fig_height = 2  # Small panels
+
+    fig, axes = plt.subplots(1, 2, figsize=(fig_width, fig_height), sharex=False, sharey=False)
+    fig.subplots_adjust(wspace=0.5, hspace=0.35, left=0.15, right=0.95, top=0.8, bottom=0.2)
+
+    # Left Panel: Absolute
+    plot_protein_expression(axes[0], protein_df, 'Absolute Protein Signal', 
+                          'GNB1 Hippocampal Protein Levels', 
+                          'GNB1/Vinculin', 
+                          df_stats, 'Supp Fig 3 (Top)')
+                          
+                          
+    # Right Panel: Relative (Manual Plot from Summary Columns)
+    ax_rel = axes[1]
+    
+    if 'WT_Relative' in protein_df.columns and 'I80T/+_Relative' in protein_df.columns:
+        wt_mean = protein_df['WT_Relative'].values[0]
+        wt_sem = protein_df['WT_Relative_SEM'].values[0]
+        gnb1_mean = protein_df['I80T/+_Relative'].values[0]
+        gnb1_sem = protein_df['I80T/+_Relative_SEM'].values[0]
+        
+        # Data for loop
+        groups = ['WT', 'GNB1']
+        means = [wt_mean, gnb1_mean]
+        sems = [wt_sem, gnb1_sem]
+        bar_colors = ['black', 'red'] # Explicitly matching COLORS from plotting_utils
+        
+        for i, (group, mean, sem, color) in enumerate(zip(groups, means, sems, bar_colors)):
+             # Bar with alpha, no edge line to prevent 'below zero' artifacts in SVG
+             ax_rel.bar(i, mean, width=0.6, color=color, alpha=0.5, label=group, linewidth=0, clip_on=False)
+             # Error Bar matching plot_bar_scatter style (fmt='o', specific size)
+             ax_rel.errorbar(i, mean, yerr=sem, fmt='o', color=color, capsize=1, elinewidth=1, markersize=2)
+        
+        ax_rel.set_xticks([0, 1])
+        ax_rel.set_xticklabels(['WT', 'GNB1'])
+        ax_rel.set_ylabel('GNB1/Vinculin Relative to Ctrl.')
+        ax_rel.set_title('GNB1 Hippocampal Protein Levels (Relative)', fontsize=9)
+        
+        # Stats
+        y_max = max(mean + sem for mean, sem in zip(means, sems))
+        annotate_from_stats(ax_rel, df_stats, 'Supp Fig 3 (Bottom)', 'Relative Protein Levels', 0, 1, y_max + 0.1)
+        
+        # Smart Y-Lim
+        ax_rel.set_ylim(0, y_max * 1.25)
+        
+    else:
+        ax_rel.text(0.5, 0.5, 'Summary Data Not Found', ha='center', va='center')
+
+    save_current_fig('Supplemental_Figure_3_Protein_Levels')
+    
+
+
+
+if __name__ == "__main__":
+    setup_publication_style()
+    plot_figure_1_behavior()
+    plot_figure_2_physiology()
+    plot_figure_3_morphology()
+    plot_figure_4_EI()
+    plot_figure_5_GABAb()
+    plot_figure_6_dendritic()
+    plot_figure_7_GIRK()
+    plot_supplemental_figure_1()
+    plot_supplemental_figure_2()
+    plot_supplemental_figure_3()

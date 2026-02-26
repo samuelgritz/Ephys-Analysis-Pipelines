@@ -1,0 +1,13 @@
+
+    stimulus_meta_data_keys:
+      EPSP_stim:
+        F_Ch1_Stim_Amp: channel_1_amp
+        F_Ch2_Stim_Amp: channel_2_amp
+        F_Ch3_Stim_Amp: channel_3_amp
+        F_Ch4_Stim_Amp: channel_4_amp
+        F_Ch1_Stim_Label: channel_1_label
+        F_Ch2_Stim_Label: channel_2_label
+        F_Ch3_Stim_Label: channel_3_label
+        F_Ch4_Stim_Label: channel_4_label
+        F_ISI: ISI
+        F_condition: condition

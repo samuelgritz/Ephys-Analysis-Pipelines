@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────
+# Project-specific: output & data directories
+# ─────────────────────────────────────────────
+paper_figures/
+additional_supplemental_figures/
+Exploratory_Testing_and_Plotting_Scripts/
+paper_data/
+test_output/
+
+# ─────────────────────────────────────────────
+# Paper writing files (legends & results drafts)
+# ─────────────────────────────────────────────
+*_Legend.md
+*_Legend_Draft.md
+*_Results_Draft.md
+*_Results.md
+methods_draft.md
+
+# ─────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.env
+
+# ─────────────────────────────────────────────
+# Jupyter Notebooks
+# ─────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ─────────────────────────────────────────────
+# R
+# ─────────────────────────────────────────────
+.Rhistory
+.RData
+.Rproj.user/
+*.Rout
+
+# ─────────────────────────────────────────────
+# macOS
+# ─────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# ─────────────────────────────────────────────
+# Editors
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

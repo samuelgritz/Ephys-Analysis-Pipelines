@@ -1,0 +1,20 @@
+How to use this workflow
+1. Run Analyze_and_Export_... for specific experiment. This creates the clean CSVs in paper_data.
+
+2. Run Analyze_Stats_Python.py.
+
+It will automatically load those CSVs.
+
+It will perform the Shapiro-Wilk test on every comparison.
+
+It will automatically switch between T-Test and Mann-Whitney.
+
+Or do any other stats you want.
+
+It will print a clean report to your terminal with p-values and significance stars.
+
+3. Update generate_figures.py:
+
+Take the p-values printed by the stats script.
+
+Manually add them to your add_stat_annotation(...) calls in the plotting script.

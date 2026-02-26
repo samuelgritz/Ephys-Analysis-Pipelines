@@ -1,0 +1,13 @@
+#Locations for .pkl storage to load data into scripts
+
+WT_dirs: 
+  NMDG: '/Users/samgritz/Library/CloudStorage/GoogleDrive-gritz122@gmail.com/My Drive/Rutgers/Milstein_Lab_Data/GNB1_WT_Project/New_Analysis_Processed_Data/WT_data/Processed_data/WT_042024_on_processed_data/updated_files_NMDG_E_I'
+  Sucrose: '/Users/samgritz/Library/CloudStorage/GoogleDrive-gritz122@gmail.com/My Drive/Rutgers/Milstein_Lab_Data/GNB1_WT_Project/New_Analysis_Processed_Data/WT_data/Processed_data/WT_042024_on_processed_data/updated_files_Sucrose_E_I'
+  Older: '/Users/samgritz/Library/CloudStorage/GoogleDrive-gritz122@gmail.com/My Drive/Rutgers/Milstein_Lab_Data/GNB1_WT_Project/New_Analysis_Processed_Data/WT_data/Processed_data/WT_Before_04222024_processed_data'
+
+GNB1_dirs:
+  NMDG: '/Users/samgritz/Library/CloudStorage/GoogleDrive-gritz122@gmail.com/My Drive/Rutgers/Milstein_Lab_Data/GNB1_WT_Project/New_Analysis_Processed_Data/GNB1_data/Processed_data/GNB1_0420204_on_processed_data/NMDG'
+  Sucrose: '/Users/samgritz/Library/CloudStorage/GoogleDrive-gritz122@gmail.com/My Drive/Rutgers/Milstein_Lab_Data/GNB1_WT_Project/New_Analysis_Processed_Data/GNB1_data/Processed_data/GNB1_0420204_on_processed_data/Sucrose'
+  Older: '/Users/samgritz/Library/CloudStorage/GoogleDrive-gritz122@gmail.com/My Drive/Rutgers/Milstein_Lab_Data/GNB1_WT_Project/New_Analysis_Processed_Data/GNB1_data/Processed_data/GNB1_Before_04222024_processed_data'
+  
+  
