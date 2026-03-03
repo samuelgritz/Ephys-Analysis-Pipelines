@@ -337,8 +337,8 @@ def plot_figure_2_physiology():
     # Row 2: D (FI traces stacked)    | E (F-I curve)
     # Row 3: F (FI Midpoint)          | G (Rheobase) | H (ISI traces) | I (ISI adaptation)
 
-    fig = plt.figure(figsize=(6.89, 8.5))  # slightly taller to accommodate 3 rows
-    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[0.55, 0.50, 0.55], hspace=0.55)
+    fig = plt.figure(figsize=(6.89, 9.0))  # Taller to reduce cramping
+    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[0.65, 0.45, 0.50], hspace=0.6)
 
     # ==========================================================
     # ROW 1: A | B | C
@@ -358,7 +358,7 @@ def plot_figure_2_physiology():
                          'Genotype', order=['WT', 'I80T/+'])
         ax_a.set_ylabel('Input Resistance (MΩ)', fontsize=7)
         ax_a.set_title('Input Resistance', fontsize=8)
-        ax_a.set_box_aspect(1.4)
+        ax_a.set_box_aspect(1.5)
         if df_stats is not None:
             annotate_from_stats(ax_a, df_stats, "Fig 2A", "Input Resistance",
                                 x1=0, x2=1,
@@ -369,7 +369,7 @@ def plot_figure_2_physiology():
     # --- Panel B: Voltage Sag traces (stacked) + Voltage Sag bar ---
     gs_B = gridspec.GridSpecFromSubplotSpec(
         2, 2, subplot_spec=gs_row1[1],
-        height_ratios=[0.55, 0.45], hspace=0.35, wspace=0.25)
+        height_ratios=[0.55, 0.45], hspace=0.4, wspace=0.25)
 
     # B-top: two trace axes side by side (WT left, I80T/+ right)
     ax_b_wt  = fig.add_subplot(gs_B[0, 0])
@@ -393,7 +393,7 @@ def plot_figure_2_physiology():
                          'Genotype', order=['WT', 'I80T/+'])
         ax_b_bar.set_ylabel('Voltage Sag (%)', fontsize=7)
         ax_b_bar.set_title('Voltage Sag', fontsize=8)
-        ax_b_bar.set_box_aspect(0.7)
+        ax_b_bar.set_box_aspect(0.6)
         if df_stats is not None:
             annotate_from_stats(ax_b_bar, df_stats, "Fig 2A", "Voltage Sag",
                                 x1=0, x2=1,
@@ -404,7 +404,7 @@ def plot_figure_2_physiology():
     # --- Panel C: AP traces (stacked) + AHP Decay bar ---
     gs_C = gridspec.GridSpecFromSubplotSpec(
         2, 2, subplot_spec=gs_row1[2],
-        height_ratios=[0.55, 0.45], hspace=0.35, wspace=0.25)
+        height_ratios=[0.55, 0.45], hspace=0.4, wspace=0.25)
 
     ax_c_wt  = fig.add_subplot(gs_C[0, 0])
     ax_c_gnb = fig.add_subplot(gs_C[0, 1])
@@ -452,7 +452,7 @@ def plot_figure_2_physiology():
                          'Genotype', order=['WT', 'I80T/+'])
         ax_c_bar.set_ylabel('AHP Area\n(mV·ms)', fontsize=7)
         ax_c_bar.set_title('AHP Decay', fontsize=8)
-        ax_c_bar.set_box_aspect(0.7)
+        ax_c_bar.set_box_aspect(0.6)
         if df_stats is not None:
             annotate_from_stats(ax_c_bar, df_stats, "Fig 2E", "AHP Decay",
                                 x1=0, x2=1,
@@ -465,7 +465,7 @@ def plot_figure_2_physiology():
     # ==========================================================
     gs_row2 = gridspec.GridSpecFromSubplotSpec(
         1, 2, subplot_spec=outer_grid[1],
-        width_ratios=[0.30, 0.70], wspace=0.35)
+        width_ratios=[0.40, 0.60], wspace=0.35)
 
     # Panel D: FI traces stacked
     gs_d = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row2[0], hspace=0.1)
@@ -484,7 +484,7 @@ def plot_figure_2_physiology():
         gnb1_trace, gnb1_current = None, None
 
         preferred_wt   = ['04042024_c1', '02262024_c2', '03142024_c1', '02132024_c2']
-        preferred_gnb1 = ['02262024_c1', '04042024_c2', '02132024_c1']
+        preferred_gnb1 = ['07302024_c3', '02132024_c2', '10312025_c1', '04042024_c2']
         for cell in preferred_wt + wt_cells[:30]:
             t, c = find_200pA_trace_direct(cell, raw_traces_path)
             if t is not None:
