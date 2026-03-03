@@ -419,7 +419,7 @@ def plot_protein_expression(ax, df_protein, metric_type, title, y_label, stats_d
         if 'WT' in col:
             genotype = 'WT'
         elif 'I80T' in col:
-            genotype = 'GNB1' # Map to GNB1 for color consistency (Red)
+            genotype = 'I80T/+' # Map to I80T/+ for color consistency (Red)
             
         if genotype:
             # Extract value (assuming single row df, take the first value)
@@ -432,7 +432,7 @@ def plot_protein_expression(ax, df_protein, metric_type, title, y_label, stats_d
         plot_trace_placeholder(ax, "No Data Found")
         return
 
-    max_h = plot_bar_scatter(ax, df_long, 'Genotype', 'Value', 'Genotype', order=['WT', 'GNB1'], show_scatter=show_scatter)
+    max_h = plot_bar_scatter(ax, df_long, 'Genotype', 'Value', 'Genotype', order=['WT', 'I80T/+'], show_scatter=show_scatter)
     
     ax.set_title(title, fontsize=9)
     ax.set_ylabel(y_label)
@@ -1784,10 +1784,10 @@ def plot_supralinearity(ax, df_amplitudes, channel, supralin_type='Gabazine', ti
     x_positions = range(len(isi_order))
     
     # Plot both genotypes
-    colors = {'WT': 'black', 'GNB1': 'red'}
-    markers = {'WT': 'o', 'GNB1': 'o'}
+    colors = {'WT': 'black', 'GNB1': 'red', 'I80T/+': 'red'}
+    markers = {'WT': 'o', 'GNB1': 'o', 'I80T/+': 'o'}
     
-    for genotype in ['WT', 'GNB1']:
+    for genotype in ['WT', 'GNB1', 'I80T/+']:
         # Filter data
         subset = df_amplitudes[(df_amplitudes['Channel'] == channel) & 
                                (df_amplitudes['Genotype'] == genotype) &
@@ -1893,10 +1893,10 @@ def plot_ei_imbalance(ax, df_amplitudes, channel, title=None):
     x_positions = range(len(isi_order))
     
     # Plot both genotypes
-    colors = {'WT': 'black', 'GNB1': 'red'}
-    markers = {'WT': 'o', 'GNB1': 'o'}
+    colors = {'WT': 'black', 'GNB1': 'red', 'I80T/+': 'red'}
+    markers = {'WT': 'o', 'GNB1': 'o', 'I80T/+': 'o'}
     
-    for genotype in ['WT', 'GNB1']:
+    for genotype in ['WT', 'GNB1', 'I80T/+']:
         # Filter data
         subset = df_amplitudes[(df_amplitudes['Channel'] == channel) & 
                                (df_amplitudes['Genotype'] == genotype) &
@@ -2023,7 +2023,7 @@ def create_physiology_summary_table(ax, df_intrinsic, df_ap_ahp, df_stats):
             wt_n = len(wt_data)
             
             # GNB1 statistics  
-            gnb1_data = df[df['Genotype'] == 'GNB1'][col].dropna()
+            gnb1_data = df[df['Genotype'].isin(['GNB1', 'I80T/+'])][col].dropna()
             gnb1_mean = gnb1_data.mean() if len(gnb1_data) > 0 else np.nan
             gnb1_sem = gnb1_data.sem() if len(gnb1_data) > 1 else np.nan
             gnb1_n = len(gnb1_data)
@@ -2108,7 +2108,7 @@ def export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, output_pa
         
         # Get WT and GNB1 data
         wt_data = df[df['Genotype'] == 'WT'][column].dropna()
-        gnb1_data = df[df['Genotype'] == 'GNB1'][column].dropna()
+        gnb1_data = df[df['Genotype'].isin(['GNB1', 'I80T/+'])][column].dropna()
         
         # Calculate stats
         wt_mean = wt_data.mean() if len(wt_data) > 0 else np.nan
@@ -2143,8 +2143,8 @@ def plot_bar_scatter_fig2(ax, df, column, ylabel, df_stats, stats_key):
     """Plot bar/scatter plot for a single property."""
     import numpy as np
     
-    colors = {'WT': 'black', 'GNB1': 'red'}
-    genotypes = ['WT', 'GNB1']
+    colors = {'WT': 'black', 'GNB1': 'red', 'I80T/+': 'red'}
+    genotypes = ['WT', 'I80T/+']
     plot_data = df.dropna(subset=[column])
     
     for i, genotype in enumerate(genotypes):
@@ -2161,7 +2161,7 @@ def plot_bar_scatter_fig2(ax, df, column, ylabel, df_stats, stats_key):
     
     ax.set_xticks([0, 1])
     wt_n = len(plot_data[plot_data['Genotype'] == 'WT'])
-    gnb1_n = len(plot_data[plot_data['Genotype'] == 'GNB1'])
+    gnb1_n = len(plot_data[plot_data['Genotype'].isin(['GNB1', 'I80T/+'])])
     ax.set_xticklabels([f'WT\n(N={wt_n})', f'GNB1\n(N={gnb1_n})'])
     ax.set_ylabel(ylabel, fontsize=10)
     ax.spines['top'].set_visible(False)
@@ -2295,7 +2295,7 @@ def plot_isi_example_traces(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, targ
         #     # ax_gnb1.text((t1+t2)/2, v_line+2, f'{isi_ms:.0f}ms',
         #     #             ha='center', va='bottom', fontsize=7, color='blue')
         
-        ax_gnb1.text(0.02, 0.95, 'GNB1', transform=ax_gnb1.transAxes,
+        ax_gnb1.text(0.02, 0.95, 'I80T/+', transform=ax_gnb1.transAxes,
                     fontsize=10, fontweight='bold', va='top', color='red')
         ax_gnb1.set_xlim(150, time[gnb1_peaks[-1]] + 100)
     else:
@@ -2362,14 +2362,14 @@ def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='
             ax.text(0.02, 0.95, genotype, transform=ax.transAxes, fontsize=11, fontweight='bold', va='top', color=label_color)
             ax.set_xlim(200, 950)
             ax.axis('off')
-            if genotype == 'GNB1':
+            if genotype in ('GNB1', 'I80T/+'):
                 add_scale_bar(ax, 100, 10, x_pos=0.8, y_pos=0.15)
         except Exception as e:
             print(f"Error plotting voltage sag for {cell_id}: {e}")
             plot_trace_placeholder(ax, f"Error: {e}")
     
     plot_single_voltage_sag(ax_wt, target_wt, 'WT', add_annotations=True)
-    plot_single_voltage_sag(ax_gnb1, target_gnb1, 'GNB1', add_annotations=False)
+    plot_single_voltage_sag(ax_gnb1, target_gnb1, 'I80T/+', add_annotations=False)
 
 
 def plot_ahp_area_comparison(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, target_wt='03142024_c2', target_gnb1='02132024_c1'):
@@ -2440,7 +2440,7 @@ def plot_ahp_area_comparison(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, tar
             ax.text(0.02, 0.95, genotype, transform=ax.transAxes, fontsize=11, fontweight='bold', va='top', color=label_color)
             ax.set_xlim(peak_time - 10, min(trough_time + 80, time[recovery_idx] + 20))
             ax.axis('off')
-            if genotype == 'GNB1':
+            if genotype in ('GNB1', 'I80T/+'):
                 add_scale_bar(ax, 20, 20, x_pos=0.75, y_pos=0.15)
         except Exception as e:
             print(f"Error plotting AHP area for {cell_id}: {e}")
@@ -2449,7 +2449,7 @@ def plot_ahp_area_comparison(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, tar
             plot_trace_placeholder(ax, f"Error: {e}")
     
     plot_single_ahp_area(ax_wt, target_wt, 'WT', df_ap_ahp)
-    plot_single_ahp_area(ax_gnb1, target_gnb1, 'GNB1', df_ap_ahp)
+    plot_single_ahp_area(ax_gnb1, target_gnb1, 'I80T/+', df_ap_ahp)
 
 # ==================================================================================================
 # FIGURE 4 HELPER FUNCTIONS FOR 3-PATHWAY LAYOUT
@@ -2620,7 +2620,7 @@ def plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name):
         
         # GNB1 data
         gnb1_data = df_amplitudes[
-            (df_amplitudes['Genotype'] == 'GNB1') &
+            (df_amplitudes['Genotype'].isin(['GNB1', 'I80T/+'])) &
             (df_amplitudes['Pathway'] == pathway_name) &
             (df_amplitudes['ISI'] == isi)
         ]['Gabazine_Amplitude'].dropna()
@@ -2631,7 +2631,7 @@ def plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name):
     ax.errorbar(range(len(isis)), wt_means, yerr=wt_sems, color='black', marker='o',
                 markersize=3, linewidth=1, label='WT', capsize=2, capthick=0.5)
     ax.errorbar(range(len(isis)), gnb1_means, yerr=gnb1_sems, color='red', marker='o',
-                markersize=3, linewidth=1, label='GNB1', capsize=2, capthick=0.5)
+                markersize=3, linewidth=1, label='I80T/+', capsize=2, capthick=0.5)
     
     # Format axes
     ax.set_xticks(range(len(isis)))
@@ -2710,7 +2710,7 @@ def plot_metric_comparison(ax, df_amplitudes, pathway_name, column, ylabel, add_
         
         # GNB1 data
         gnb1_data = df_amplitudes[
-            (df_amplitudes['Genotype'] == 'GNB1') &
+            (df_amplitudes['Genotype'].isin(['GNB1', 'I80T/+'])) &
             (df_amplitudes['Pathway'] == pathway_name) &
             (df_amplitudes['ISI'] == isi)
         ][column].dropna()
@@ -2721,7 +2721,7 @@ def plot_metric_comparison(ax, df_amplitudes, pathway_name, column, ylabel, add_
     ax.errorbar(range(len(isis)), wt_means, yerr=wt_sems, color='black', marker='o',
                 markersize=3, linewidth=1, label='WT', capsize=2, capthick=0.5)
     ax.errorbar(range(len(isis)), gnb1_means, yerr=gnb1_sems, color='red', marker='o',
-                markersize=3, linewidth=1, label='GNB1', capsize=2, capthick=0.5)
+                markersize=3, linewidth=1, label='I80T/+', capsize=2, capthick=0.5)
     
     # Format axes
     ax.set_xticks(range(len(isis)))
@@ -2953,7 +2953,7 @@ def plot_traces_GIRK_exp(ax, traces_before, traces_after, genotype, drug_name, a
     """Plot Gabazine vs Gabazine+Drug traces with SEM"""
     
     # Define colors locally
-    colors = {'WT': 'k', 'GNB1': 'r'}
+    colors = {'WT': 'k', 'GNB1': 'r', 'I80T/+': 'r'}
     acq_freq = 20000
     
     color = colors[genotype]
@@ -3034,9 +3034,9 @@ def plot_traces_GIRK_exp(ax, traces_before, traces_after, genotype, drug_name, a
 
 def plot_GIRK_bars(ax, df_before, df_after, drug_name, sig_within, sig_between):
     # EXACT SAME COLORS AS plot_bar_scatter_fig2
-    colors = {'WT': 'black', 'GNB1': 'red'}
+    colors = {'WT': 'black', 'GNB1': 'red', 'I80T/+': 'red'}
     
-    genotypes = ['WT', 'GNB1']
+    genotypes = ['WT', 'I80T/+']
     x_pos = 0
     positions = {}
     data_by_group = {}
@@ -3094,10 +3094,10 @@ def plot_GIRK_bars(ax, df_before, df_after, drug_name, sig_within, sig_between):
         x_pos += group_spacing
     
     # Between-genotype bracket
-    if 'WT' in positions and 'GNB1' in positions:
-        x1, x2 = positions['WT'], positions['GNB1']
+    if 'WT' in positions and ('GNB1' in positions or 'I80T/+' in positions):
+        x1, x2 = positions['WT'], positions.get('GNB1', positions.get('I80T/+', 1))
         y1 = data_by_group['WT'].max() if len(data_by_group['WT']) > 0 else 1
-        y2 = data_by_group['GNB1'].max() if len(data_by_group['GNB1']) > 0 else 1
+        y2 = data_by_group.get('GNB1', data_by_group.get('I80T/+', [])).max() if len(data_by_group.get('GNB1', data_by_group.get('I80T/+', []))) > 0 else 1
         ymax = max(y1, y2) + 0.45
         ax.plot([x1, x1, x2, x2], [ymax, ymax+0.05, ymax+0.05, ymax], 'k-', lw=0.8)
         ax.text((x1 + x2)/2, ymax + 0.06, sig_between, ha='center', fontsize=7, fontweight='bold')
@@ -3161,7 +3161,7 @@ def plot_gabab_traces(ax, gabab_traces, pathway_key, title, label, gabab_metrics
             if isinstance(trace, np.ndarray) and len(trace) > 4000:
                 if genotype == 'WT':
                     wt_traces.append(trace[:6000])
-                elif genotype == 'GNB1':
+                elif genotype in ('GNB1', 'I80T/+'):
                     gnb1_traces.append(trace[:6000])
     
     if wt_traces and gnb1_traces:
@@ -3188,7 +3188,7 @@ def plot_gabab_traces(ax, gabab_traces, pathway_key, title, label, gabab_metrics
     elif wt_traces or gnb1_traces:
         # Only one genotype available
         traces_to_plot = wt_traces if wt_traces else gnb1_traces
-        geno = 'WT' if wt_traces else 'GNB1'
+        geno = 'WT' if wt_traces else 'I80T/+'
         color = 'black' if geno == 'WT' else 'red'
         
         min_len = min(len(t) for t in traces_to_plot)
@@ -3230,7 +3230,7 @@ def plot_gabab_metric_bar(ax, gabab_df, pathway_key, metric_col, ylabel, label, 
     
     # Use plot_bar_scatter
     plot_bar_scatter(ax, pathway_data, x_col='Genotype', y_col=metric_col, 
-                    hue_col='Genotype', order=['WT', 'GNB1'])
+                    hue_col='Genotype', order=['WT', 'I80T/+'])
     ax.set_ylabel(ylabel)
     ax.set_box_aspect(1)
     
@@ -3262,7 +3262,7 @@ def plot_gabab_vm_change(ax, vm_csv_path, label, df_stats=None):
         # Some datasets store this as absolute magnitude. We want "negative change".
         df_vm['Voltage Change'] = -1 * df_vm['Voltage Change'].abs()
         
-        plot_bar_scatter(ax, df_vm, 'Genotype', 'Voltage Change', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax, df_vm, 'Genotype', 'Voltage Change', 'Genotype', order=['WT', 'I80T/+'])
         ax.set_ylabel('ΔVm (mV)')
         ax.set_title('Resting Potential Change', fontsize=8, fontweight='bold')
         ax.set_box_aspect(1)
@@ -3455,9 +3455,11 @@ def plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq=20000, s
     t_len = end_idx - start_idx
     time = np.arange(t_len) / (acq_freq/1000)
     
-    for r, geno in enumerate(['WT', 'GNB1']):
+    for r, geno in enumerate(['WT', 'I80T/+']):
         row_idx = r
         color = 'k' if geno == 'WT' else 'r'
+        # raw_data pkl may use 'GNB1' as key — fall back gracefully
+        raw_key = geno if geno in raw_data else ('GNB1' if geno == 'I80T/+' else geno)
         
         for i, pathway in enumerate(cols):
             ax = fig.add_subplot(gs[row_idx, i])
@@ -3467,8 +3469,8 @@ def plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq=20000, s
             if row_idx == 0 and i == 0:
                 add_subplot_label(ax, "A")
             
-            if pathway in raw_data[geno]:
-                trace = raw_data[geno][pathway]
+            if raw_key in raw_data and pathway in raw_data[raw_key]:
+                trace = raw_data[raw_key][pathway]
                 if len(trace) > len(time):
                     trace = trace[:len(time)]
                 ax.plot(time[:len(trace)], trace, color=color, linewidth=0.8, label=f'{geno} Raw')
@@ -3498,7 +3500,7 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
     
     for geno in ['WT', 'GNB1']:
         for pathway in cols:
-            if pathway in processed_stats[geno]:
+            if pathway in processed_stats.get(geno, {}):
                 p_stats = processed_stats[geno][pathway]
                 if 'mean' in p_stats:
                     mean_trace = p_stats['mean']
@@ -3517,9 +3519,11 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
     panel_b_ymin -= 0.1 * y_range
     panel_b_ymax += 0.1 * y_range
     
-    for r, geno in enumerate(['WT', 'GNB1']):
+    for r, geno in enumerate(['WT', 'I80T/+']):
         row_idx = r + 2
         color = 'k' if geno == 'WT' else 'r'
+        # processed_stats pkl may use 'GNB1' — fall back gracefully
+        stats_key = geno if geno in processed_stats else ('GNB1' if geno == 'I80T/+' else geno)
         
         for i, pathway in enumerate(cols):
             ax = fig.add_subplot(gs[row_idx, i])
@@ -3528,8 +3532,8 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
                 add_subplot_label(ax, "B")
             
             # Plot measured trace with SEM
-            if pathway in processed_stats[geno]:
-                p_stats = processed_stats[geno][pathway]
+            if stats_key in processed_stats and pathway in processed_stats[stats_key]:
+                p_stats = processed_stats[stats_key][pathway]
                 mean_trace = p_stats['mean']
                 sem_trace = p_stats['sem']
                 
@@ -3605,7 +3609,7 @@ def plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats=None):
         pathway_data = plateau_filt[plateau_filt['Pathway'] == pathway].copy()
         
         # N counts will be calculated automatically by plot_bar_scatter from the data
-        plot_bar_scatter(ax_bar, pathway_data, 'Genotype', 'Plateau_Area', 'Genotype', order=['WT', 'GNB1'], unique_col='Cell_ID')
+        plot_bar_scatter(ax_bar, pathway_data, 'Genotype', 'Plateau_Area', 'Genotype', order=['WT', 'I80T/+'], unique_col='Cell_ID')
         
         # ax_bar.set_title(label, fontsize=8, fontweight='bold') # Removed title
         ax_bar.set_ylim(0, y_lim_top)
@@ -3754,7 +3758,7 @@ def plot_averaged_difference_traces(fig, gs, supralin_traces, master_df, start_i
                     
                     if geno == 'WT':
                         wt_diffs.append(sliced_trace)
-                    elif geno == 'GNB1':
+                    elif geno in ('GNB1', 'I80T/+'):
                         gnb1_diffs.append(sliced_trace)
         
         # Average and plot WT
@@ -3820,7 +3824,7 @@ def plot_supralinear_peak_cycles(fig, gs, df_peaks, df_stats=None, df_anova=None
     # Pre-scan to find data range
     for p in ['Perforant', 'Schaffer', 'Both Pathways']:
         p_data = df_peaks[df_peaks['Pathway'] == p]
-        for g in ['WT', 'GNB1']:
+        for g in ['WT', 'GNB1', 'I80T/+']:
             g_data = p_data[p_data['Genotype'] == g]
             if g_data.empty: continue
             
@@ -3855,7 +3859,7 @@ def plot_supralinear_peak_cycles(fig, gs, df_peaks, df_stats=None, df_anova=None
         # Store y-max for annotation placement (local to this plot, but bounds are fixed)
         global_max = -np.inf # Used variable name in original code
         
-        for geno, color in [('WT', 'k'), ('GNB1', 'r')]:
+        for geno, color in [('WT', 'k'), ('GNB1', 'r'), ('I80T/+', 'r')]:
             geno_data = pathway_data[pathway_data['Genotype'] == geno]
             
             means = []
@@ -3914,7 +3918,7 @@ def plot_supralinear_peak_cycles(fig, gs, df_peaks, df_stats=None, df_anova=None
                             
                             # Calculate local max for this cycle specifically
                             local_max = -np.inf
-                            for Geno in ['WT', 'GNB1']:
+                            for Geno in ['WT', 'GNB1', 'I80T/+']:
                                 g_dat = pathway_data[pathway_data['Genotype'] == Geno][f'Cycle_{c}'].dropna()
                                 if not g_dat.empty:
                                     m = g_dat.mean()
@@ -4017,9 +4021,9 @@ def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None):
              if not match.empty:
                  row = match.iloc[0]
                  if 'N_WT' in row.index and 'N_GNB1' in row.index:
-                     n_override = {'WT': int(row['N_WT']), 'GNB1': int(row['N_GNB1'])}
+                     n_override = {'WT': int(row['N_WT']), 'I80T/+': int(row['N_GNB1'])}
 
-        plot_bar_scatter(ax_bar, pathway_data, 'Genotype', 'Total_AUC', 'Genotype', order=['WT', 'GNB1'], unique_col='Cell_ID', override_n_counts=n_override)
+        plot_bar_scatter(ax_bar, pathway_data, 'Genotype', 'Total_AUC', 'Genotype', order=['WT', 'I80T/+'], unique_col='Cell_ID', override_n_counts=n_override)
         
         # ax_bar.set_title(label, fontsize=8, fontweight='bold') # Removed title
         ax_bar.set_ylim(y_lim_bottom, y_lim_top)
@@ -4096,7 +4100,7 @@ def prepare_figure_6_data(df_auc_total=None):
     # 2. Load Data for Panel A (Raw Traces)
     # -------------------------------------------------------------------------
     example_traces_path = os.path.join('paper_data', 'Plateau_data', 'Figure6_Example_Traces.pkl')
-    raw_data = {'WT': {}, 'GNB1': {}}
+    raw_data = {'WT': {}, 'I80T/+': {}}
     
     if os.path.exists(example_traces_path):
         with open(example_traces_path, 'rb') as f:
@@ -4213,7 +4217,7 @@ def plot_girk_delta_bars(ax, df_delta, drug_name, stats_df=None):
     Plots Delta Change grouped by Pathway (Both, Schaffer, Perforant).
     """
     pathways = ['Both']
-    genotypes = ['WT', 'GNB1']
+    genotypes = ['WT', 'I80T/+']
     
     x_start = 0
     group_spacing = 2.5

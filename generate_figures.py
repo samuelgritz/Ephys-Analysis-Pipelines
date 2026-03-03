@@ -301,6 +301,14 @@ def plot_figure_2_physiology():
         if df is not None and 'Genotype' in df.columns:
             df['Genotype'] = df['Genotype'].str.strip()
 
+    # Rename GNB1 -> I80T/+ for display
+    df_intrinsic = rename_genotype(df_intrinsic)
+    df_ap_ahp = rename_genotype(df_ap_ahp)
+    df_FI = rename_genotype(df_FI)
+    fi_df_final = rename_genotype(fi_df_final)
+    isi_df_final = rename_genotype(isi_df_final)
+    fi_midpoints_df = rename_genotype(fi_midpoints_df)
+
     # ---------------------------------------------------------
     # 2. Locate Raw Data (FROM BOX for Trace Panels)
     # ---------------------------------------------------------
@@ -384,7 +392,7 @@ def plot_figure_2_physiology():
             plot_example_rheobase_and_sweeps(ax_b_gnb1, raw_traces_path, master_df=master_df, 
                                              target_cell_id=target_gnb1_rheo, sweep_idx=sweep_idx_gnb1, analysis_df=df_ap_ahp, show_values=False)
             ax_b_gnb1.axis('off')
-            ax_b_gnb1.text(0.02, 0.95, 'GNB1', transform=ax_b_gnb1.transAxes, fontsize=9, fontweight='bold', va='top', color='red')
+            ax_b_gnb1.text(0.02, 0.95, 'I80T/+', transform=ax_b_gnb1.transAxes, fontsize=9, fontweight='bold', va='top', color='red')
             add_scale_bar(ax_b_gnb1, 5, 20, x_pos=0.85, y_pos=0.1)
         else:
             plot_trace_placeholder(ax_b_gnb1, "GNB1 Data Unavailable")
@@ -407,7 +415,7 @@ def plot_figure_2_physiology():
     ax_c1 = fig.add_subplot(gs_C[0])
     add_subplot_label(ax_c1, "C")
     if df_intrinsic is not None and 'Voltage_sag' in df_intrinsic.columns:
-        plot_bar_scatter(ax_c1, df_intrinsic, 'Genotype', 'Voltage_sag', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax_c1, df_intrinsic, 'Genotype', 'Voltage_sag', 'Genotype', order=['WT', 'I80T/+'])
         ax_c1.set_ylabel('Voltage Sag (%)')
         ax_c1.set_title('Voltage Sag', fontsize=8)
         ax_c1.set_box_aspect(1)
@@ -416,7 +424,7 @@ def plot_figure_2_physiology():
     
     ax_c2 = fig.add_subplot(gs_C[1])
     if df_ap_ahp is not None and 'decay_area' in df_ap_ahp.columns:
-        plot_bar_scatter(ax_c2, df_ap_ahp, 'Genotype', 'decay_area', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax_c2, df_ap_ahp, 'Genotype', 'decay_area', 'Genotype', order=['WT', 'I80T/+'])
         ax_c2.set_ylabel('AHP Area\n(mV·ms)')
         ax_c2.set_title('AHP Decay', fontsize=8)
         ax_c2.set_box_aspect(1)
@@ -478,7 +486,7 @@ def plot_figure_2_physiology():
             gnb1_trace_aligned = gnb1_trace - baseline_gnb1 + common_baseline
             
             ax_d_gnb1.plot(time, gnb1_trace_aligned, 'r-', linewidth=0.8)
-            ax_d_gnb1.text(0.02, 0.95, 'GNB1', transform=ax_d_gnb1.transAxes, fontsize=8, fontweight='bold', va='top', color='red')
+            ax_d_gnb1.text(0.02, 0.95, 'I80T/+', transform=ax_d_gnb1.transAxes, fontsize=8, fontweight='bold', va='top', color='red')
         
         # Align both plots using aligned traces
         max_time = max(len(wt_trace) if wt_trace is not None else 0,
@@ -538,7 +546,7 @@ def plot_figure_2_physiology():
     add_subplot_label(ax_f, "F")
 
     if fi_midpoints_df is not None:
-        plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint', 'Genotype', order=['WT', 'I80T/+'])
         ax_f.set_ylabel('F-I Curve Midpoint (pA)')
         ax_f.set_title('F-I Midpoint', fontsize=8)
         ax_f.set_box_aspect(1)
@@ -549,7 +557,7 @@ def plot_figure_2_physiology():
         ax_f.text(0.5, 0.5, 'Midpoint Data Missing', ha='center', color='red')
     # if df_FI is not None and 'FI_Slope' in df_FI.columns:
     #     plot_data = df_FI.dropna(subset=['FI_Slope'])
-    #     plot_bar_scatter(ax_f, plot_data, 'Genotype', 'FI_Slope', 'Genotype', order=['WT', 'GNB1'])
+    #     plot_bar_scatter(ax_f, plot_data, 'Genotype', 'FI_Slope', 'Genotype', order=['WT', 'I80T/+'])
     #     ax_f.set_ylabel('F-I Curve Slope (Hz/pA)')
     #     ax_f.set_title('F-I Slope', fontsize=8)
     #     ax_f.set_box_aspect(1)
@@ -562,7 +570,7 @@ def plot_figure_2_physiology():
     add_subplot_label(ax_rheo, "G")
     if df_ap_ahp is not None and 'Rheobase_Current' in df_ap_ahp.columns:
         plot_data = df_ap_ahp.dropna(subset=['Rheobase_Current'])
-        plot_bar_scatter(ax_rheo, plot_data, 'Genotype', 'Rheobase_Current', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax_rheo, plot_data, 'Genotype', 'Rheobase_Current', 'Genotype', order=['WT', 'I80T/+'])
         ax_rheo.set_ylabel('Rheobase (pA)')
         ax_rheo.set_title('Rheobase', fontsize=8)
         ax_rheo.set_box_aspect(1)
@@ -653,8 +661,13 @@ def plot_figure_3_morphology():
     df_stats = load_data('Morphology_Analysis', 'Stats_Results_Figure_3.csv')
         
     # Separate data by genotype
+    # Rename GNB1 -> I80T/+ for display
+    df_sholl = rename_genotype(df_sholl)
+    df_cdf = rename_genotype(df_cdf)
+    df_dend_props = rename_genotype(df_dend_props)
+
     df_wt = df_sholl[df_sholl['Genotype'] == 'WT'].copy()
-    df_gnb1 = df_sholl[df_sholl['Genotype'] == 'GNB1'].copy()
+    df_gnb1 = df_sholl[df_sholl['Genotype'] == 'I80T/+'].copy()
     
     # Create figure with 7 panels: A (reconstructions), B (Basal Sholl), C (Apical Sholl), 
     #                               D (Basal CDF), E (Apical CDF), F (Branch Sum), G (Terminal Branches)
@@ -695,7 +708,7 @@ def plot_figure_3_morphology():
     
     # Plot Basal Dendrites
     plot_sholl_data(ax_basal, df_wt, 'WT', 'Basal', COLORS['WT'])
-    plot_sholl_data(ax_basal, df_gnb1, 'GNB1', 'Basal', COLORS['GNB1'])
+    plot_sholl_data(ax_basal, df_gnb1, 'I80T/+', 'Basal', COLORS['GNB1'])
     ax_basal.set_title('Basal Dendrites', fontsize=9)
     ax_basal.set_xlabel('Distance from Soma (μm)', fontsize=8)
     ax_basal.set_ylabel('Number of Intersections', fontsize=8)
@@ -705,7 +718,7 @@ def plot_figure_3_morphology():
     
     # Plot Apical Dendrites
     plot_sholl_data(ax_apical, df_wt, 'WT', 'Apical', COLORS['WT'])
-    plot_sholl_data(ax_apical, df_gnb1, 'GNB1', 'Apical', COLORS['GNB1'])
+    plot_sholl_data(ax_apical, df_gnb1, 'I80T/+', 'Apical', COLORS['GNB1'])
     ax_apical.set_title('Apical Dendrites', fontsize=9)
     ax_apical.set_xlabel('Distance from Soma (μm)', fontsize=8)
     ax_apical.set_ylabel('Number of Intersections', fontsize=8)
@@ -813,7 +826,7 @@ def plot_figure_3_morphology():
         ax_f_basal = fig.add_subplot(gs_F[0])
         add_subplot_label(ax_f_basal, "F")
         df_basal_props = df_dend_props[df_dend_props['Dendrite_Type'] == 'Basal']
-        max_h = plot_bar_scatter(ax_f_basal, df_basal_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'GNB1'])
+        max_h = plot_bar_scatter(ax_f_basal, df_basal_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'I80T/+'])
         annotate_from_stats(ax_f_basal, df_stats, 'Fig 3F (Left)', 'Basal Total Branch Length', 0, 1, max_h)
         
         ax_f_basal.set_ylabel('Total Branch Length ($\mu$m)', fontsize=8)
@@ -823,7 +836,7 @@ def plot_figure_3_morphology():
         # F2: Apical Branch Sum
         ax_f_apical = fig.add_subplot(gs_F[1])
         df_apical_props = df_dend_props[df_dend_props['Dendrite_Type'] == 'Apical']
-        max_h = plot_bar_scatter(ax_f_apical, df_apical_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'GNB1'])
+        max_h = plot_bar_scatter(ax_f_apical, df_apical_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'I80T/+'])
         annotate_from_stats(ax_f_apical, df_stats, 'Fig 3F (Right)', 'Apical Total Branch Length', 0, 1, max_h)
         
         ax_f_apical.set_ylabel('')
@@ -834,7 +847,7 @@ def plot_figure_3_morphology():
         # G1: Basal Terminal Branches
         ax_g_basal = fig.add_subplot(gs_G[0])
         add_subplot_label(ax_g_basal, "G")
-        max_h = plot_bar_scatter(ax_g_basal, df_basal_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'GNB1'])
+        max_h = plot_bar_scatter(ax_g_basal, df_basal_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'I80T/+'])
         annotate_from_stats(ax_g_basal, df_stats, 'Fig 3G (Left)', 'Basal Terminal Branches', 0, 1, max_h)
         
         ax_g_basal.set_ylabel('Number of Terminal Branches', fontsize=8)
@@ -843,7 +856,7 @@ def plot_figure_3_morphology():
         
         # G2: Apical Terminal Branches
         ax_g_apical = fig.add_subplot(gs_G[1])
-        max_h = plot_bar_scatter(ax_g_apical, df_apical_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'GNB1'])
+        max_h = plot_bar_scatter(ax_g_apical, df_apical_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'I80T/+'])
         annotate_from_stats(ax_g_apical, df_stats, 'Fig 3G (Right)', 'Apical Terminal Branches', 0, 1, max_h)
         
         ax_g_apical.set_ylabel('')
@@ -883,12 +896,12 @@ def plot_figure_4_EI():
     """
     Figure 4: E:I Balance Across Three Pathways (ECIII/Perforant, CA3/Schaffer, SO/Basal)
     
-    Layout: 5 rows × 3 columns
+    Layout: 5 rows x 3 columns
     - Row 1: WT example traces (ECIII | CA3 | SO)
-    - Row 2: GNB1 example traces (legend centered below)
-    - Row 3 (C): Gabazine - WT vs GNB1 overlaid
-    - Row 4 (D): Gabazine Supralinearity (WT black vs GNB1 red)
-    - Row 5 (E): E:I imbalance (WT black vs GNB1 red)
+    - Row 2: I80T/+ example traces (legend centered below)
+    - Row 3 (C): Gabazine - WT vs I80T/+ overlaid
+    - Row 4 (D): Gabazine Supralinearity (WT black vs I80T/+ red)
+    - Row 5 (E): E:I imbalance (WT black vs I80T/+ red)
     """
     print("\\n--- Generating Figure 4: E:I Balance (3 Pathways) ---")
     setup_publication_style()
@@ -896,6 +909,10 @@ def plot_figure_4_EI():
     # Load E:I traces and amplitudes
     df_traces = pd.read_pickle('paper_data/E_I_data/E_I_traces_for_plotting.pkl')
     df_amplitudes = pd.read_csv('paper_data/E_I_data/E_I_amplitudes.csv')
+
+    # Rename GNB1 -> I80T/+ for display
+    df_traces = rename_genotype(df_traces)
+    df_amplitudes = rename_genotype(df_amplitudes)
     
     # Load statistics from corrected R scripts (condition-specific corrections)
     
@@ -1014,9 +1031,9 @@ def plot_figure_4_EI():
             add_subplot_label(ax, "B", fontsize=8, fontweight='bold')
         
         if pathway == 'basal':
-            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - GNB1', pathway=pathway, add_legend=False)
+            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
         else:
-            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - GNB1', pathway=pathway, add_legend=False)
+            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
     
     # Add custom legend CENTERED below row 2
     from matplotlib.lines import Line2D
@@ -1125,8 +1142,8 @@ def plot_figure_6_dendritic():
     """
     Figure 6: Dendritic Excitability (Restructured)
     
-    Panel A (Rows 1-2): Raw Theta Burst traces (WT vs GNB1) for ECIII, CA3, Both.
-    Panel B (Rows 3-4): Processed (from Pickle) + Expected traces (WT vs GNB1).
+    Panel A (Rows 1-2): Raw Theta Burst traces (WT vs I80T/+) for ECIII, CA3, Both.
+    Panel B (Rows 3-4): Processed (from Pickle) + Expected traces (WT vs I80T/+).
     Panel C (Row 5): Plateau Area bar plots
     Panel D (Row 6): Single WT Example - Difference Traces
     Panel E (Row 7): Averaged Supralinearity Traces
@@ -1144,6 +1161,10 @@ def plot_figure_6_dendritic():
     
     # PREPARE DATA (Logic moved to plotting_utils)
     raw_data, processed_stats, plateau_df, df_auc_total, supralin_traces = prepare_figure_6_data(df_auc_total)
+
+    # Rename GNB1 -> I80T/+ for display
+    plateau_df = rename_genotype(plateau_df)
+    df_auc_total = rename_genotype(df_auc_total)
     
     # Re-define config variables for plotting calls (matching helper)
     acq_freq = 20000
@@ -1223,8 +1244,8 @@ def plot_figure_7_GIRK():
     """
     Figure 7: GIRK Channel Analysis (ML297 / ETX Effects)
     New Layout (2 Rows):
-    Panel A: ML297 Traces (WT/GNB1) + Delta Quantification
-    Panel B: ETX Traces (WT/GNB1) + Delta Quantification
+    Panel A: ML297 Traces (WT/I80T/+) + Delta Quantification
+    Panel B: ETX Traces (WT/I80T/+) + Delta Quantification
     """
     print("\n--- Generating Figure 7: GIRK Channel Analysis ---")
     setup_publication_style()
@@ -1234,6 +1255,8 @@ def plot_figure_7_GIRK():
     df_delta = None
     if os.path.exists(delta_csv_path):
         df_delta = pd.read_csv(delta_csv_path)
+        # Rename GNB1 -> I80T/+ for display
+        df_delta = rename_genotype(df_delta)
     else:
         print("⚠ Warning: Plateau_Delta_GIRK.csv not found. Run analysis script.")
 
@@ -1327,6 +1350,9 @@ def plot_figure_5_GABAb():
     if os.path.exists(trace_path):
         gabab_traces = pd.read_pickle(trace_path)
     
+    # Rename GNB1 -> I80T/+ for display
+    gabab_df = rename_genotype(gabab_df)
+
     # Filter for Gabazine condition only (case-insensitive)
     gabab_gab = gabab_df[gabab_df['Condition'].str.lower() == 'gabazine'].copy()
     gabab_gab = gabab_gab.drop_duplicates(subset=['Cell_ID', 'Channel_Name'])
@@ -1399,7 +1425,7 @@ def plot_figure_5_GABAb():
 def plot_supplemental_figure_1():
     """
     Supplemental Figure 1: Full E:I Breakdown (Control, Gabazine, Expected, Est. Inhibition)
-    Separate panels for WT and GNB1 across 3 pathways.
+    Separate panels for WT and I80T/+ across 3 pathways.
     """
     print("\n--- Generating Supplemental Figure 1: Full E:I Breakdown ---")
     
@@ -1410,6 +1436,9 @@ def plot_supplemental_figure_1():
         return
         
     df = pd.read_csv(ei_amp_path)
+
+    # Rename GNB1 -> I80T/+ for display
+    df = rename_genotype(df)
     
     # WIDTH constraint: max 17.5 cm, explicitly made smaller as requested
     fig_width = 15 / 2.54 
@@ -1431,7 +1460,7 @@ def plot_supplemental_figure_1():
         ('Basal SO', 'Basal_Stratum_Oriens')
     ]
     
-    genotypes = ['WT', 'GNB1']
+    genotypes = ['WT', 'I80T/+']
     
     metrics = [
         ('Control_Amplitude', 'Measured (With Inhibition)', 'black'),
@@ -1465,15 +1494,17 @@ def plot_supplemental_figure_2():
 
     master_birth_df = pd.read_csv('Master_DF_littermate_Sex.csv')
 
+    df = pd.DataFrame(master_birth_df)
+    # Rename GNB1 -> I80T/+ for display
+    df = rename_genotype(df)
+
     # WIDTH constraint: max 17.5 cm, explicitly made smaller as requested
-    fig_width = 15 / 2.54 
-    fig_height = 5  # inches - adjusted for square aspect ratio
-    
-    # Increase bottom margin for legend
+    fig_width = 15 / 2.54
+    fig_height = 5  # inches
+
     fig, axes = plt.subplots(1, 2, figsize=(fig_width, fig_height), sharex=False, sharey=True)
     fig.subplots_adjust(wspace=0.35, hspace=0.35, left=0.08, right=0.98, top=0.9, bottom=0.15)
 
-    df = pd.DataFrame(master_birth_df)
 
     group_counts = df.groupby("Genotype").size()
 
@@ -1531,7 +1562,7 @@ def plot_supplemental_figure_3():
         gnb1_sem = protein_df['I80T/+_Relative_SEM'].values[0]
         
         # Data for loop
-        groups = ['WT', 'GNB1']
+        groups = ['WT', 'I80T/+']
         means = [wt_mean, gnb1_mean]
         sems = [wt_sem, gnb1_sem]
         bar_colors = ['black', 'red'] # Explicitly matching COLORS from plotting_utils
@@ -1543,7 +1574,7 @@ def plot_supplemental_figure_3():
              ax_rel.errorbar(i, mean, yerr=sem, fmt='o', color=color, capsize=1, elinewidth=1, markersize=2)
         
         ax_rel.set_xticks([0, 1])
-        ax_rel.set_xticklabels(['WT', 'GNB1'])
+        ax_rel.set_xticklabels(['WT', 'I80T/+'])
         ax_rel.set_ylabel('GNB1/Vinculin Relative to Ctrl.')
         ax_rel.set_title('GNB1 Hippocampal Protein Levels (Relative)', fontsize=9)
         
