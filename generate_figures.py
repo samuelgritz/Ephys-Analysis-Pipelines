@@ -324,229 +324,246 @@ def plot_figure_2_physiology():
         print(f"⚠ Warning: Raw Data Folder '{RAW_DATA_BOX_FOLDER}' not found via Box or locally.") 
         print("   Panel A will be a placeholder.")
 
-    # ---------------------------------------------------------
-    # 3. Setup NEW Layout
-    # ---------------------------------------------------------
-    # Row 1: Panel A (Rheobase Trace) | Panel B (Summary Table)
-    # Row 2: Panel C (FI Examples) | Panel D (F-I Curve) | Panel E (F-I Slope) | Panel F (ISI)
-    
-    fig = plt.figure(figsize=(6.89, 8))  # 17.5cm width, full column
-    
-    # Outer Grid: 3 Rows - Adjusted for square panels
-    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[0.6, 0.55, 0.6], hspace=0.5)
-
-    # ---------------------------------------------------------
-    # ROW 1: Panel A (Example Traces) & Panel B (Bar Plots)
-    # ---------------------------------------------------------
-    target_cell = '03142024_c2'  # Example cell for all traces
-    
     # Export summary table to CSV
     from plotting_utils import export_physiology_summary_table
-    export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, 
+    export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats,
                                    'paper_figures/Figure_2_Summary_Table.csv')
     print('✓ Exported summary table to paper_figures/Figure_2_Summary_Table.csv')
-    
-    gs_row1 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer_grid[0], width_ratios=[0.5, 0.5], wspace=0.4)
-    
-    # Panel A: Voltage Sag Comparison (WT and GNB1 side-by-side)
-    gs_A = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row1[0], wspace=0.2)
-    ax_a_wt = fig.add_subplot(gs_A[0])
-    ax_a_gnb1 = fig.add_subplot(gs_A[1])
-    add_subplot_label(ax_a_wt, "A")
-    
+
+    # ---------------------------------------------------------
+    # 3. Setup Layout
+    # ---------------------------------------------------------
+    # Row 1: A (Input Resistance bar) | B (Vsag traces + Vsag bar) | C (AP traces + AHP bar)
+    # Row 2: D (FI traces stacked)    | E (F-I curve)
+    # Row 3: F (FI Midpoint)          | G (Rheobase) | H (ISI traces) | I (ISI adaptation)
+
+    fig = plt.figure(figsize=(6.89, 8.5))  # slightly taller to accommodate 3 rows
+    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[0.55, 0.50, 0.55], hspace=0.55)
+
+    # ==========================================================
+    # ROW 1: A | B | C
+    # A = Input Resistance bar (narrow)
+    # B = Vsag traces stacked (top) + Vsag bar (bottom)
+    # C = AP traces stacked   (top) + AHP Decay bar (bottom)
+    # ==========================================================
+    gs_row1 = gridspec.GridSpecFromSubplotSpec(
+        1, 3, subplot_spec=outer_grid[0],
+        width_ratios=[0.22, 0.39, 0.39], wspace=0.45)
+
+    # --- Panel A: Input Resistance bar ---
+    ax_a = fig.add_subplot(gs_row1[0])
+    add_subplot_label(ax_a, "A")
+    if df_intrinsic is not None and 'Input_Resistance_MOhm' in df_intrinsic.columns:
+        plot_bar_scatter(ax_a, df_intrinsic, 'Genotype', 'Input_Resistance_MOhm',
+                         'Genotype', order=['WT', 'I80T/+'])
+        ax_a.set_ylabel('Input Resistance (MΩ)', fontsize=7)
+        ax_a.set_title('Input Resistance', fontsize=8)
+        ax_a.set_box_aspect(1.4)
+        if df_stats is not None:
+            annotate_from_stats(ax_a, df_stats, "Fig 2A", "Input Resistance",
+                                x1=0, x2=1,
+                                y_pos=get_safe_y(df_intrinsic['Input_Resistance_MOhm']))
+    else:
+        ax_a.text(0.5, 0.5, 'Rin Missing', ha='center', color='red')
+
+    # --- Panel B: Voltage Sag traces (stacked) + Voltage Sag bar ---
+    gs_B = gridspec.GridSpecFromSubplotSpec(
+        2, 2, subplot_spec=gs_row1[1],
+        height_ratios=[0.55, 0.45], hspace=0.35, wspace=0.25)
+
+    # B-top: two trace axes side by side (WT left, I80T/+ right)
+    ax_b_wt  = fig.add_subplot(gs_B[0, 0])
+    ax_b_gnb = fig.add_subplot(gs_B[0, 1])
+    add_subplot_label(ax_b_wt, "B")
+
     if raw_traces_path and master_df is not None:
         from plotting_utils import plot_voltage_sag_comparison
-        target_wt_sag = '03142024_c2'
-        target_gnb1_sag = '02132024_c1'
-        plot_voltage_sag_comparison(ax_a_wt, ax_a_gnb1, raw_traces_path, master_df, 
-                                    target_wt=target_wt_sag, target_gnb1=target_gnb1_sag)
-        # Tighten Y-axis to make Panel A shorter
-        ax_a_wt.set_ylim(-95, -50)
-        ax_a_gnb1.set_ylim(-95, -50)
+        plot_voltage_sag_comparison(ax_b_wt, ax_b_gnb, raw_traces_path, master_df,
+                                    target_wt='03142024_c2', target_gnb1='02132024_c1')
+        ax_b_wt.set_ylim(-95, -50)
+        ax_b_gnb.set_ylim(-95, -50)
     else:
-        plot_trace_placeholder(ax_a_wt, "Data Unavailable")
-        plot_trace_placeholder(ax_a_gnb1, "Data Unavailable")
+        plot_trace_placeholder(ax_b_wt, "Unavailable")
+        plot_trace_placeholder(ax_b_gnb, "Unavailable")
 
-    # Panel B: AP Rheobase Traces (WT and GNB1 zoomed in)
-    gs_B = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row1[1], wspace=0.2)
-    ax_b_wt = fig.add_subplot(gs_B[0])
-    ax_b_gnb1 = fig.add_subplot(gs_B[1])
-    add_subplot_label(ax_b_wt, "B")
-    
-    if raw_traces_path and master_df is not None:
-        # Use existing rheobase plotting function with zoomed view
-        target_wt_rheo = '03142024_c2'
-        target_gnb1_rheo = '05092024_c3'
-        sweep_idx_wt = get_sweep_index_from_master(master_df, target_wt_rheo)
-        sweep_idx_gnb1 = get_sweep_index_from_master(master_df, target_gnb1_rheo)
-        
-        if sweep_idx_wt is not None:
-            plot_example_rheobase_and_sweeps(ax_b_wt, raw_traces_path, master_df=master_df, 
-                                             target_cell_id=target_wt_rheo, sweep_idx=sweep_idx_wt, analysis_df=df_ap_ahp, show_values=False)
-            ax_b_wt.axis('off')
-            ax_b_wt.text(0.02, 0.95, 'WT', transform=ax_b_wt.transAxes, fontsize=9, fontweight='bold', va='top')
-        else:
-            plot_trace_placeholder(ax_b_wt, "WT Data Unavailable")
-            
-        if sweep_idx_gnb1 is not None:
-            plot_example_rheobase_and_sweeps(ax_b_gnb1, raw_traces_path, master_df=master_df, 
-                                             target_cell_id=target_gnb1_rheo, sweep_idx=sweep_idx_gnb1, analysis_df=df_ap_ahp, show_values=False)
-            ax_b_gnb1.axis('off')
-            ax_b_gnb1.text(0.02, 0.95, 'I80T/+', transform=ax_b_gnb1.transAxes, fontsize=9, fontweight='bold', va='top', color='red')
-            add_scale_bar(ax_b_gnb1, 5, 20, x_pos=0.85, y_pos=0.1)
-        else:
-            plot_trace_placeholder(ax_b_gnb1, "GNB1 Data Unavailable")
-        
-        # Set shared Y-limits for Panel B to match Panel A's vertical scale
-        ax_b_wt.set_ylim(-80, 50)
-        ax_b_gnb1.set_ylim(-80, 50)
-    else:
-        plot_trace_placeholder(ax_b_wt, "Data Unavailable")
-        plot_trace_placeholder(ax_b_gnb1, "Data Unavailable")
-
-    # ---------------------------------------------------------
-    # ROW 2: Panels C (Bar Plots) | D (FI Examples) | E (F-I Curve)
-    # ---------------------------------------------------------
-    gs_row2 = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=outer_grid[1], width_ratios=[0.45, 0.25, 0.30], wspace=0.3)
-    
-    # Panel C: Bar Plots (Voltage Sag, AHP Decay)
-    gs_C = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row2[0], wspace=0.5)
-    
-    ax_c1 = fig.add_subplot(gs_C[0])
-    add_subplot_label(ax_c1, "C")
+    # B-bottom: Voltage Sag bar plot spanning both columns
+    ax_b_bar = fig.add_subplot(gs_B[1, :])
     if df_intrinsic is not None and 'Voltage_sag' in df_intrinsic.columns:
-        plot_bar_scatter(ax_c1, df_intrinsic, 'Genotype', 'Voltage_sag', 'Genotype', order=['WT', 'I80T/+'])
-        ax_c1.set_ylabel('Voltage Sag (%)')
-        ax_c1.set_title('Voltage Sag', fontsize=8)
-        ax_c1.set_box_aspect(1)
+        plot_bar_scatter(ax_b_bar, df_intrinsic, 'Genotype', 'Voltage_sag',
+                         'Genotype', order=['WT', 'I80T/+'])
+        ax_b_bar.set_ylabel('Voltage Sag (%)', fontsize=7)
+        ax_b_bar.set_title('Voltage Sag', fontsize=8)
+        ax_b_bar.set_box_aspect(0.7)
         if df_stats is not None:
-            annotate_from_stats(ax_c1, df_stats, "Fig 2A", "Voltage Sag", x1=0, x2=1, y_pos=get_safe_y(df_intrinsic['Voltage_sag']))
-    
-    ax_c2 = fig.add_subplot(gs_C[1])
-    if df_ap_ahp is not None and 'decay_area' in df_ap_ahp.columns:
-        plot_bar_scatter(ax_c2, df_ap_ahp, 'Genotype', 'decay_area', 'Genotype', order=['WT', 'I80T/+'])
-        ax_c2.set_ylabel('AHP Area\n(mV·ms)')
-        ax_c2.set_title('AHP Decay', fontsize=8)
-        ax_c2.set_box_aspect(1)
-        if df_stats is not None:
-            annotate_from_stats(ax_c2, df_stats, "Fig 2E", "AHP Decay", x1=0, x2=1, y_pos=get_safe_y(df_ap_ahp['decay_area']))
+            annotate_from_stats(ax_b_bar, df_stats, "Fig 2A", "Voltage Sag",
+                                x1=0, x2=1,
+                                y_pos=get_safe_y(df_intrinsic['Voltage_sag']))
+    else:
+        ax_b_bar.text(0.5, 0.5, 'Sag Missing', ha='center', color='red')
 
-    # Panel D: Example FI Traces (~200pA for WT and GNB1) - Stacked vertically
-    gs_d = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row2[1], hspace=0.1)
-    ax_d_wt = fig.add_subplot(gs_d[0])
-    ax_d_gnb1 = fig.add_subplot(gs_d[1])
-    add_subplot_label(ax_d_wt, "D")
-    
+    # --- Panel C: AP traces (stacked) + AHP Decay bar ---
+    gs_C = gridspec.GridSpecFromSubplotSpec(
+        2, 2, subplot_spec=gs_row1[2],
+        height_ratios=[0.55, 0.45], hspace=0.35, wspace=0.25)
+
+    ax_c_wt  = fig.add_subplot(gs_C[0, 0])
+    ax_c_gnb = fig.add_subplot(gs_C[0, 1])
+    add_subplot_label(ax_c_wt, "C")
+
     if raw_traces_path and master_df is not None:
-        # Convert Cell_IDs in master_df to file format
+        target_wt_rheo  = '03142024_c2'
+        target_gnb_rheo = '05092024_c3'
+        sweep_idx_wt  = get_sweep_index_from_master(master_df, target_wt_rheo)
+        sweep_idx_gnb = get_sweep_index_from_master(master_df, target_gnb_rheo)
+
+        if sweep_idx_wt is not None:
+            plot_example_rheobase_and_sweeps(ax_c_wt, raw_traces_path, master_df=master_df,
+                                             target_cell_id=target_wt_rheo,
+                                             sweep_idx=sweep_idx_wt,
+                                             analysis_df=df_ap_ahp, show_values=False)
+            ax_c_wt.axis('off')
+            ax_c_wt.text(0.02, 0.95, 'WT', transform=ax_c_wt.transAxes,
+                         fontsize=8, fontweight='bold', va='top')
+        else:
+            plot_trace_placeholder(ax_c_wt, "WT")
+
+        if sweep_idx_gnb is not None:
+            plot_example_rheobase_and_sweeps(ax_c_gnb, raw_traces_path, master_df=master_df,
+                                             target_cell_id=target_gnb_rheo,
+                                             sweep_idx=sweep_idx_gnb,
+                                             analysis_df=df_ap_ahp, show_values=False)
+            ax_c_gnb.axis('off')
+            ax_c_gnb.text(0.02, 0.95, 'I80T/+', transform=ax_c_gnb.transAxes,
+                          fontsize=8, fontweight='bold', va='top', color='red')
+            add_scale_bar(ax_c_gnb, 5, 20, x_pos=0.8, y_pos=0.1)
+        else:
+            plot_trace_placeholder(ax_c_gnb, "I80T/+")
+
+        ax_c_wt.set_ylim(-80, 50)
+        ax_c_gnb.set_ylim(-80, 50)
+    else:
+        plot_trace_placeholder(ax_c_wt, "Unavailable")
+        plot_trace_placeholder(ax_c_gnb, "Unavailable")
+
+    # C-bottom: AHP Decay bar spanning both columns
+    ax_c_bar = fig.add_subplot(gs_C[1, :])
+    if df_ap_ahp is not None and 'decay_area' in df_ap_ahp.columns:
+        plot_bar_scatter(ax_c_bar, df_ap_ahp, 'Genotype', 'decay_area',
+                         'Genotype', order=['WT', 'I80T/+'])
+        ax_c_bar.set_ylabel('AHP Area\n(mV·ms)', fontsize=7)
+        ax_c_bar.set_title('AHP Decay', fontsize=8)
+        ax_c_bar.set_box_aspect(0.7)
+        if df_stats is not None:
+            annotate_from_stats(ax_c_bar, df_stats, "Fig 2E", "AHP Decay",
+                                x1=0, x2=1,
+                                y_pos=get_safe_y(df_ap_ahp['decay_area']))
+    else:
+        ax_c_bar.text(0.5, 0.5, 'AHP Missing', ha='center', color='red')
+
+    # ==========================================================
+    # ROW 2: D (FI example traces stacked) | E (F-I curve)
+    # ==========================================================
+    gs_row2 = gridspec.GridSpecFromSubplotSpec(
+        1, 2, subplot_spec=outer_grid[1],
+        width_ratios=[0.30, 0.70], wspace=0.35)
+
+    # Panel D: FI traces stacked
+    gs_d = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row2[0], hspace=0.1)
+    ax_d_wt  = fig.add_subplot(gs_d[0])
+    ax_d_gnb = fig.add_subplot(gs_d[1])
+    add_subplot_label(ax_d_wt, "D")
+
+    if raw_traces_path and master_df is not None:
         master_df_copy = master_df.copy()
         master_df_copy['File_Cell_ID'] = master_df_copy['Cell_ID'].apply(convert_cell_id_format)
-        
-        wt_cells = master_df_copy[master_df_copy['Genotype'] == 'WT']['File_Cell_ID'].tolist()
+
+        wt_cells   = master_df_copy[master_df_copy['Genotype'] == 'WT']['File_Cell_ID'].tolist()
         gnb1_cells = master_df_copy[master_df_copy['Genotype'] == 'GNB1']['File_Cell_ID'].tolist()
-        
-        wt_trace, wt_current = None, None
+
+        wt_trace, wt_current     = None, None
         gnb1_trace, gnb1_current = None, None
-        
-        # Search for WT trace - try different cells with good firing
-        preferred_wt = ['04042024_c1', '02262024_c2', '03142024_c1', '02132024_c2']  # Try cells with more spikes
-        for cell in preferred_wt + wt_cells[:30]:
-            trace, current = find_200pA_trace_direct(cell, raw_traces_path)
-            if trace is not None:
-                wt_trace, wt_current = trace, current
-                break
-        
-        # Search for GNB1 trace - original order
+
+        preferred_wt   = ['04042024_c1', '02262024_c2', '03142024_c1', '02132024_c2']
         preferred_gnb1 = ['02262024_c1', '04042024_c2', '02132024_c1']
+        for cell in preferred_wt + wt_cells[:30]:
+            t, c = find_200pA_trace_direct(cell, raw_traces_path)
+            if t is not None:
+                wt_trace, wt_current = t, c; break
         for cell in preferred_gnb1 + gnb1_cells[:30]:
-            trace, current = find_200pA_trace_direct(cell, raw_traces_path)
-            if trace is not None:
-                gnb1_trace, gnb1_current = trace, current
-                break
-        
-        
-        # Plot WT (top) - normalize to common baseline for alignment
+            t, c = find_200pA_trace_direct(cell, raw_traces_path)
+            if t is not None:
+                gnb1_trace, gnb1_current = t, c; break
+
+        common_baseline = -65
         if wt_trace is not None:
             time = np.arange(len(wt_trace)) / 20
-            # Normalize to common baseline
-            baseline_wt = np.mean(wt_trace[int(0.1*len(wt_trace)):int(0.15*len(wt_trace))])
-            common_baseline = -65  # mV
-            wt_trace_aligned = wt_trace - baseline_wt + common_baseline
-            
-            ax_d_wt.plot(time, wt_trace_aligned, 'k-', linewidth=0.8)
-            ax_d_wt.text(0.02, 0.95, 'WT', transform=ax_d_wt.transAxes, fontsize=8, fontweight='bold', va='top')
+            bl = np.mean(wt_trace[int(0.1*len(wt_trace)):int(0.15*len(wt_trace))])
+            ax_d_wt.plot(time, wt_trace - bl + common_baseline, 'k-', linewidth=0.8)
+            ax_d_wt.text(0.02, 0.95, 'WT', transform=ax_d_wt.transAxes,
+                         fontsize=8, fontweight='bold', va='top')
         ax_d_wt.set_title('~200 pA', fontsize=8)
-        
-        # Plot GNB1 (bottom) - normalize to same baseline
+
         if gnb1_trace is not None:
             time = np.arange(len(gnb1_trace)) / 20
-            # Normalize to common baseline
-            baseline_gnb1 = np.mean(gnb1_trace[int(0.1*len(gnb1_trace)):int(0.15*len(gnb1_trace))])
-            common_baseline = -65  # mV
-            gnb1_trace_aligned = gnb1_trace - baseline_gnb1 + common_baseline
-            
-            ax_d_gnb1.plot(time, gnb1_trace_aligned, 'r-', linewidth=0.8)
-            ax_d_gnb1.text(0.02, 0.95, 'I80T/+', transform=ax_d_gnb1.transAxes, fontsize=8, fontweight='bold', va='top', color='red')
-        
-        # Align both plots using aligned traces
+            bl = np.mean(gnb1_trace[int(0.1*len(gnb1_trace)):int(0.15*len(gnb1_trace))])
+            ax_d_gnb.plot(time, gnb1_trace - bl + common_baseline, 'r-', linewidth=0.8)
+            ax_d_gnb.text(0.02, 0.95, 'I80T/+', transform=ax_d_gnb.transAxes,
+                          fontsize=8, fontweight='bold', va='top', color='red')
+
         max_time = max(len(wt_trace) if wt_trace is not None else 0,
-                      len(gnb1_trace) if gnb1_trace is not None else 0) / 20
+                       len(gnb1_trace) if gnb1_trace is not None else 0) / 20
         xlim_start, xlim_end = 150, max_time
-        
-        # Calculate ylim from aligned traces
-        ylim_min = min(wt_trace_aligned.min() if wt_trace is not None else -100, 
-                      gnb1_trace_aligned.min() if gnb1_trace is not None else -100) - 10
-        ylim_max = max(wt_trace_aligned.max() if wt_trace is not None else 50, 
-                      gnb1_trace_aligned.max() if gnb1_trace is not None else 50) + 10
-        
-        ax_d_wt.set_xlim(xlim_start, xlim_end)
-        ax_d_gnb1.set_xlim(xlim_start, xlim_end)
-        ax_d_wt.set_ylim(ylim_min, ylim_max)
-        ax_d_gnb1.set_ylim(ylim_min, ylim_max)
-        
-        ax_d_wt.axis('off')
-        ax_d_gnb1.axis('off')
-        add_scale_bar(ax_d_gnb1, 100, 20, x_pos=0.85, y_pos=0.1)
+        wt_aligned   = wt_trace   - np.mean(wt_trace  [int(0.1*len(wt_trace  )):int(0.15*len(wt_trace  ))]) + common_baseline if wt_trace is not None else None
+        gnb1_aligned = gnb1_trace - np.mean(gnb1_trace[int(0.1*len(gnb1_trace)):int(0.15*len(gnb1_trace))]) + common_baseline if gnb1_trace is not None else None
+        ylim_min = min(wt_aligned.min()   if wt_aligned   is not None else -100,
+                       gnb1_aligned.min() if gnb1_aligned is not None else -100) - 10
+        ylim_max = max(wt_aligned.max()   if wt_aligned   is not None else 50,
+                       gnb1_aligned.max() if gnb1_aligned is not None else 50) + 10
+        for ax in (ax_d_wt, ax_d_gnb):
+            ax.set_xlim(xlim_start, xlim_end)
+            ax.set_ylim(ylim_min, ylim_max)
+            ax.axis('off')
+        add_scale_bar(ax_d_gnb, 100, 20, x_pos=0.85, y_pos=0.1)
     else:
         ax_d_wt.text(0.5, 0.5, 'Data unavailable', ha='center', va='center', fontsize=8)
         ax_d_wt.axis('off')
-        ax_d_gnb1.axis('off')
+        ax_d_gnb.axis('off')
 
-    # Panel E: F-I Curve
-    ax_e = fig.add_subplot(gs_row2[2])
+    # Panel E: F-I curve
+    ax_e = fig.add_subplot(gs_row2[1])
     add_subplot_label(ax_e, "E")
-    
     if fi_df_final is not None:
         for genotype in fi_df_final['Genotype'].unique():
             subset = fi_df_final[fi_df_final['Genotype'] == genotype]
             n_cells = len(df_FI[df_FI['Genotype'] == genotype])
-            label_text = f"{genotype} (n={n_cells})"
             color = COLORS.get(genotype, 'gray')
             ax_e.errorbar(
-                subset['Current'].to_numpy(), subset['mean_rate'].to_numpy(), yerr=subset['sem_rate'].to_numpy(),
-                label=label_text, color=color, marker='o', capsize=2, markersize=3
-            )
+                subset['Current'].to_numpy(), subset['mean_rate'].to_numpy(),
+                yerr=subset['sem_rate'].to_numpy(),
+                label=f"{genotype} (n={n_cells})",
+                color=color, marker='o', capsize=2, markersize=3)
         ax_e.set_xlabel('Current (pA)')
         ax_e.set_ylabel('Firing Rate (Hz)')
         ax_e.spines['top'].set_visible(False)
         ax_e.spines['right'].set_visible(False)
         ax_e.set_box_aspect(1)
         ax_e.legend(loc='upper left', frameon=False, fontsize=8)
-       
     else:
         ax_e.text(0.5, 0.5, 'Curve Data Missing', ha='center', color='red')
-    
-    # ---------------------------------------------------------
-    # ROW 3: Panels F (F-I Curve Midpoint) | G (Rheobase) | H (ISI Examples) | I (ISI Adaptation)
-    # ---------------------------------------------------------
-    gs_row3 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=outer_grid[2], width_ratios=[0.22, 0.22, 0.26, 0.30], wspace=0.4)
-    
-    # Panel F: F-I Curve Midpoint
+
+    # ==========================================================
+    # ROW 3: F (FI Midpoint) | G (Rheobase) | H (ISI traces) | I (ISI adaptation)
+    # ==========================================================
+    gs_row3 = gridspec.GridSpecFromSubplotSpec(
+        1, 4, subplot_spec=outer_grid[2],
+        width_ratios=[0.22, 0.22, 0.26, 0.30], wspace=0.4)
+
+    # Panel F: F-I Midpoint
     ax_f = fig.add_subplot(gs_row3[0])
     add_subplot_label(ax_f, "F")
-
     if fi_midpoints_df is not None:
-        plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint', 'Genotype', order=['WT', 'I80T/+'])
+        plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint',
+                         'Genotype', order=['WT', 'I80T/+'])
         ax_f.set_ylabel('F-I Curve Midpoint (pA)')
         ax_f.set_title('F-I Midpoint', fontsize=8)
         ax_f.set_box_aspect(1)
@@ -555,70 +572,55 @@ def plot_figure_2_physiology():
                                 x1=0, x2=1, y_pos=get_safe_y(fi_midpoints_df['FI_Midpoint']))
     else:
         ax_f.text(0.5, 0.5, 'Midpoint Data Missing', ha='center', color='red')
-    # if df_FI is not None and 'FI_Slope' in df_FI.columns:
-    #     plot_data = df_FI.dropna(subset=['FI_Slope'])
-    #     plot_bar_scatter(ax_f, plot_data, 'Genotype', 'FI_Slope', 'Genotype', order=['WT', 'I80T/+'])
-    #     ax_f.set_ylabel('F-I Curve Slope (Hz/pA)')
-    #     ax_f.set_title('F-I Slope', fontsize=8)
-    #     ax_f.set_box_aspect(1)
-    #     # No stat annotation - not in stats file
-    # else:
-    #     ax_f.text(0.5, 0.5, 'Slope Data Missing', ha='center', color='red')
 
     # Panel G: Rheobase
     ax_rheo = fig.add_subplot(gs_row3[1])
     add_subplot_label(ax_rheo, "G")
     if df_ap_ahp is not None and 'Rheobase_Current' in df_ap_ahp.columns:
         plot_data = df_ap_ahp.dropna(subset=['Rheobase_Current'])
-        plot_bar_scatter(ax_rheo, plot_data, 'Genotype', 'Rheobase_Current', 'Genotype', order=['WT', 'I80T/+'])
+        plot_bar_scatter(ax_rheo, plot_data, 'Genotype', 'Rheobase_Current',
+                         'Genotype', order=['WT', 'I80T/+'])
         ax_rheo.set_ylabel('Rheobase (pA)')
         ax_rheo.set_title('Rheobase', fontsize=8)
         ax_rheo.set_box_aspect(1)
         if df_stats is not None:
-            annotate_from_stats(ax_rheo, df_stats, "Fig 2C", "Rheobase", x1=0, x2=1, y_pos=get_safe_y(plot_data['Rheobase_Current']))
+            annotate_from_stats(ax_rheo, df_stats, "Fig 2C", "Rheobase",
+                                x1=0, x2=1, y_pos=get_safe_y(plot_data['Rheobase_Current']))
     else:
         ax_rheo.text(0.5, 0.5, 'Rheobase Data Missing', ha='center', color='red')
 
-    # Panel H: ISI Example Traces (6 spikes)
+    # Panel H: ISI example traces
     gs_h = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row3[2], hspace=0.1)
-    ax_h_wt = fig.add_subplot(gs_h[0])
-    ax_h_gnb1 = fig.add_subplot(gs_h[1])
+    ax_h_wt  = fig.add_subplot(gs_h[0])
+    ax_h_gnb = fig.add_subplot(gs_h[1])
     add_subplot_label(ax_h_wt, "H")
-    
     if raw_traces_path and master_df is not None:
         from plotting_utils import plot_isi_example_traces
-        plot_isi_example_traces(ax_h_wt, ax_h_gnb1, raw_traces_path, master_df, df_ap_ahp)
+        plot_isi_example_traces(ax_h_wt, ax_h_gnb, raw_traces_path, master_df, df_ap_ahp)
     else:
         ax_h_wt.text(0.5, 0.5, 'ISI Traces Unavailable', ha='center', color='red')
         ax_h_wt.axis('off')
-        ax_h_gnb1.axis('off')
-    
-    # Panel I: ISI Adaptation
+        ax_h_gnb.axis('off')
+
+    # Panel I: ISI adaptation curve
     ax_i = fig.add_subplot(gs_row3[3])
     add_subplot_label(ax_i, "I")
-    
     if isi_df_final is not None and not isi_df_final.empty:
         for genotype in isi_df_final['Genotype'].unique():
             subset = isi_df_final[isi_df_final['Genotype'] == genotype]
             subset = subset[(subset['Spike_Index'] >= 2) & (subset['Spike_Index'] <= 6)]
-            
             n_cells = len(df_FI[df_FI['Genotype'] == genotype])
-            label_text = f"{genotype} (n={n_cells})"
-            
             color = COLORS.get(genotype, 'gray')
             y_col = 'mean_isi' if 'mean_isi' in subset.columns else 'mean'
-            y_err = 'sem_isi' if 'sem_isi' in subset.columns else 'sem'
-            
+            y_err = 'sem_isi'  if 'sem_isi'  in subset.columns else 'sem'
             ax_i.errorbar(
-                subset['Spike_Index'].to_numpy(), subset[y_col].to_numpy(), yerr=subset[y_err].to_numpy(),
-                label=label_text, color=color, marker='o', capsize=2, markersize=3
-            )
-        
-        x_ticks = [2, 3, 4, 5, 6]
-        ax_i.set_xticks(x_ticks)
+                subset['Spike_Index'].to_numpy(), subset[y_col].to_numpy(),
+                yerr=subset[y_err].to_numpy(),
+                label=f"{genotype} (n={n_cells})",
+                color=color, marker='o', capsize=2, markersize=3)
+        ax_i.set_xticks([2, 3, 4, 5, 6])
         ax_i.set_xticklabels(['2', '3', '4', '5', '6'])
         ax_i.set_xlim(1.5, 6.5)
-        
         ax_i.set_xlabel('AP Spike Number')
         ax_i.set_ylabel('ISI (ms)')
         ax_i.spines['top'].set_visible(False)
@@ -626,10 +628,11 @@ def plot_figure_2_physiology():
         ax_i.set_box_aspect(1)
         ax_i.legend(loc='upper left', frameon=False, fontsize=8)
     else:
-        ax_i.text(0.5, 0.5, ' ISI Data Missing', ha='center', color='red')
+        ax_i.text(0.5, 0.5, 'ISI Data Missing', ha='center', color='red')
         ax_i.set_title('Spike Rate Adaptation')
 
     save_current_fig('Figure_2_Physiology')
+
 
 
 # ==================================================================================================
