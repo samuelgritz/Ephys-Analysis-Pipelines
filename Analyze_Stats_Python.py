@@ -200,7 +200,7 @@ def run_stats_figure_2():
     # --- PANEL A: Intrinsic Properties ---
     if df_intrinsic is not None:
         # Input Resistance
-        wt, gnb1 = get_groups(df_intrinsic, 'steady_state_input_resistance')
+        wt, gnb1 = get_groups(df_intrinsic, 'Input_Resistance_MOhm')
         record_stat("Fig 2A", "Input Resistance", compare_groups_mannwhitney(wt, gnb1))
 
         # Vm Rest

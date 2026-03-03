@@ -1988,7 +1988,7 @@ def create_physiology_summary_table(ax, df_intrinsic, df_ap_ahp, df_stats):
     property_specs = [
         # Section 1: Physiological Properties
         {'section': None, 'df': df_intrinsic, 'column': 'Vm rest/start (mV)', 'display': 'Resting membrane potential (mV)', 'stats_key': 'Vm Rest'},
-        {'section': None, 'df': df_intrinsic, 'column': 'steady_state_input_resistance', 'display': 'Input resistance (MΩ)', 'stats_key': 'Input Resistance'},
+        {'section': None, 'df': df_intrinsic, 'column': 'Input_Resistance_MOhm', 'display': 'Input resistance (MΩ)', 'stats_key': 'Input Resistance'},
         {'section': None, 'df': df_intrinsic, 'column': 'Access Resistance (From Whole Cell V-Clamp)', 'display': 'Access resistance (MΩ)', 'stats_key': 'Access Resistance'},
         {'section': None, 'df': df_intrinsic, 'column': 'Voltage_sag', 'display': 'Voltage Sag (%)', 'stats_key': 'Voltage Sag'},
         # Section 2: AP Properties
@@ -2085,7 +2085,7 @@ def export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, output_pa
     # Define property mappings
     property_specs = [
         {'df': df_intrinsic, 'column': 'Vm rest/start (mV)', 'display': 'Resting membrane potential (mV)', 'stats_key': 'Vm Rest'},
-        {'df': df_intrinsic, 'column': 'steady_state_input_resistance', 'display': 'Input resistance (MΩ)', 'stats_key': 'Input Resistance'},
+        {'df': df_intrinsic, 'column': 'Input_Resistance_MOhm', 'display': 'Input resistance (MΩ)', 'stats_key': 'Input Resistance'},
         {'df': df_intrinsic, 'column': 'Access Resistance (From Whole Cell V-Clamp)', 'display': 'Access resistance (MΩ)', 'stats_key': 'Access Resistance'},
         {'df': df_intrinsic, 'column': 'Voltage_sag', 'display': 'Voltage Sag (%)', 'stats_key': 'Voltage Sag'},
         {'df': df_ap_ahp, 'column': 'Rheobase_Current', 'display': 'Rheobase (pA)', 'stats_key': 'Rheobase'},
