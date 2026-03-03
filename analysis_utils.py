@@ -1008,6 +1008,144 @@ def get_intrinsic_properties_by_cell(data_dir, cell_properties_to_plot, master_d
         print('Error in extracting intrinsic properties:', str(e))
         return None
 
+
+def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
+                                    vm_rest_threshold=-40,
+                                    pulse_amp_pA=-50,
+                                    pulse_amp_tolerance_pA=10,
+                                    min_pulse_samples=500):
+    """
+    Compute Resting Membrane Potential (Vm_rest) and Input Resistance (Rin)
+    from the SAME test-pulse sweeps in each cell's pkl file.
+
+    Both metrics are derived from the identical set of sweeps, guaranteeing
+    that Vm and Rin describe the same recording epoch.
+
+    Strategy
+    --------
+    For every sweep in the pkl, inspect `stim_command` for a sustained
+    negative current step (test pulse) near `pulse_amp_pA`.  If found:
+      - Vm_rest  = mean voltage of the 50 ms pre-pulse baseline  (mV)
+      - Rin      = (delta_Vm_steady / |pulse_amp|) * 1000         (MOhm)
+    Then average both across all valid test-pulse sweeps for the cell.
+
+    Parameters
+    ----------
+    data_dir              : str   - directory with per-cell .pkl files
+    master_df             : DataFrame or None - if given, restrict to these cells
+    vm_rest_threshold     : float - exclude sweeps where Vm_rest >= this (mV)
+    pulse_amp_pA          : float - expected test-pulse amplitude (default -50 pA)
+    pulse_amp_tolerance_pA: float - tolerance around expected amplitude (pA)
+    min_pulse_samples     : int   - min consecutive samples at pulse level
+
+    Returns
+    -------
+    dict  { cell_id: {'Vm_rest_mV': float, 'Input_Resistance_MOhm': float,
+                       'n_sweeps': int} }
+    """
+    valid_ids = None
+    if master_df is not None and 'Cell_ID' in master_df.columns:
+        valid_ids = set(master_df['Cell_ID'].astype(str))
+
+    results = {}
+    pkl_files = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
+
+    for pkl_file in pkl_files:
+        cell_id = convert_pkl_filename_to_cell_id(pkl_file)
+        if cell_id is None:
+            continue
+        if valid_ids is not None and cell_id not in valid_ids:
+            continue
+
+        try:
+            df = pd.read_pickle(os.path.join(data_dir, pkl_file))
+        except Exception:
+            continue
+
+        vm_vals  = []
+        rin_vals = []
+
+        for _, row in df.iterrows():
+            sweep_raw = row.get('sweep', None)
+            sc_raw    = row.get('stim_command', None)
+            acq_freq  = float(row.get('acquisition_frequency', 20000))
+            dt_ms     = 1000.0 / acq_freq
+
+            if sweep_raw is None or sc_raw is None:
+                continue
+
+            try:
+                sweep = np.array(sweep_raw, dtype=float)
+                sc    = np.array(
+                    sc_raw[0] if isinstance(sc_raw, (list, tuple)) else sc_raw,
+                    dtype=float)
+            except Exception:
+                continue
+
+            if sweep.ndim != 1 or sc.ndim != 1 or len(sweep) != len(sc):
+                continue
+
+            # --- Detect test pulse: longest consecutive run at expected amplitude ---
+            at_pulse = np.abs(sc - pulse_amp_pA) < pulse_amp_tolerance_pA
+            runs, in_run, run_start = [], False, 0
+            for idx in range(len(at_pulse)):
+                if at_pulse[idx] and not in_run:
+                    in_run, run_start = True, idx
+                elif not at_pulse[idx] and in_run:
+                    in_run = False
+                    runs.append((run_start, idx - 1))
+            if in_run:
+                runs.append((run_start, len(at_pulse) - 1))
+
+            if not runs:
+                continue
+
+            p_start, p_end = max(runs, key=lambda r: r[1] - r[0])
+            if (p_end - p_start + 1) < min_pulse_samples:
+                continue
+
+            detected_amp = float(np.median(sc[p_start:p_end + 1]))
+
+            # --- Vm_rest: mean of pre-pulse baseline (start to 5 ms before pulse) ---
+            baseline_end = max(0, p_start - int(5 / dt_ms))
+            if baseline_end < 5:
+                continue
+            vm_rest = float(np.mean(sweep[0:baseline_end]))
+
+            if vm_rest >= vm_rest_threshold:   # exclude depolarised / unhealthy cells
+                continue
+
+            # --- Rin: steady-state deflection (last 50% of pulse, -2 ms guard) ---
+            pulse_samples = p_end - p_start + 1
+            ss_start = p_start + int(pulse_samples * 0.5)
+            ss_end   = max(ss_start + 1, p_end - int(2 / dt_ms))
+            if ss_end <= ss_start:
+                continue
+
+            steady_v = float(np.mean(sweep[ss_start:ss_end]))
+            delta_v  = steady_v - vm_rest
+
+            if detected_amp == 0:
+                continue
+            rin = (delta_v / detected_amp) * 1000.0   # MOhm
+
+            if rin <= 0:   # sanity check (negative pulse -> negative delta -> positive Rin)
+                continue
+
+            vm_vals.append(vm_rest)
+            rin_vals.append(rin)
+
+        if vm_vals:
+            results[cell_id] = {
+                'Vm_rest_mV':            float(np.nanmean(vm_vals)),
+                'Input_Resistance_MOhm': float(np.nanmean(rin_vals)),
+                'n_sweeps':              len(vm_vals)
+            }
+
+    n_sweeps_total = sum(v['n_sweeps'] for v in results.values())
+    print(f"  [Test-pulse Vm/Rin] {len(results)} cells, {n_sweeps_total} sweeps used")
+    return results
+
 def calculate_input_resistance_from_test_pulse(trace, sampling_rate=20000, 
                                                pulse_start_ms=50, 
                                                pulse_duration_ms=100, 
