@@ -4247,8 +4247,8 @@ def plot_girk_delta_bars(ax, df_delta, drug_name, stats_df=None):
             ax.scatter([wt_x]*len(wt_data), wt_data, color='black', s=5, zorder=3)
             ax.errorbar(wt_x, wt_data.mean(), yerr=wt_data.sem(), fmt='none', color='black', capsize=2)
             
-        # Plot GNB1
-        gnb1_data = sub[sub['Genotype'] == 'GNB1']['Delta_Area']
+        # Plot I80T/+ (data may be stored as 'GNB1' or 'I80T/+')
+        gnb1_data = sub[sub['Genotype'].isin(['GNB1', 'I80T/+'])]['Delta_Area']
         if len(gnb1_data) > 0:
             ax.bar(gnb1_x, gnb1_data.mean(), width=bar_width, color='red', alpha=0.5)
             ax.scatter([gnb1_x]*len(gnb1_data), gnb1_data, color='red', s=5, zorder=3)
@@ -4281,8 +4281,16 @@ def plot_girk_delta_bars(ax, df_delta, drug_name, stats_df=None):
 
         x_start += group_spacing
     
-    ax.set_xticks(ticks)
-    ax.set_xticklabels(tick_labels, fontsize=7)
+    # Label each bar directly on the x-axis: 'WT' and 'I80T/+' under respective bars
+    bar_xticks = []
+    bar_xlabels = []
+    x_pos = 0
+    for path in pathways:
+        bar_xticks.extend([x_pos, x_pos + bar_width + bar_gap])
+        bar_xlabels.extend(['WT', 'I80T/+'])
+        x_pos += group_spacing
+    ax.set_xticks(bar_xticks)
+    ax.set_xticklabels(bar_xlabels, fontsize=7)
     ax.set_ylabel('Delta Area (mV*ms)', fontsize=8)
     ax.set_title(drug_name, fontsize=9, fontweight='bold')
     ax.axhline(0, color='gray', linestyle='--', linewidth=0.5)
@@ -4300,17 +4308,19 @@ def plot_traces_GIRK_v2(ax, traces_before, traces_after, genotype, drug_name,
     before_list = []
     after_list = []
     
-    # Extraction Logic (same as original to ensure consistency)
-    # Note: Using 'Both' pathway traces
+    # Extraction Logic — pkl stores genotype as 'GNB1', display uses 'I80T/+'
+    # Fall back to 'GNB1' when looking up data if display label is 'I80T/+'
+    data_geno = genotype if genotype != 'I80T/+' else 'GNB1'
+
     for cell_id, cell_data in traces_before.items():
-        if cell_data['genotype'] == genotype:
+        if cell_data['genotype'] in (genotype, data_geno):
             if 'Both' in cell_data['traces']:
                 trace = cell_data['traces']['Both']
                 if len(trace) >= 30000:
-                    before_list.append(trace[10000:30000]) # 500ms to 1500ms
+                    before_list.append(trace[10000:30000])
     
     for cell_id, cell_data in traces_after.items():
-        if cell_data['genotype'] == genotype:
+        if cell_data['genotype'] in (genotype, data_geno):
             if 'Both' in cell_data['traces']:
                 trace = cell_data['traces']['Both']
                 if len(trace) >= 30000:

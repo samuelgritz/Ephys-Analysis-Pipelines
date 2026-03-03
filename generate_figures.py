@@ -1286,10 +1286,10 @@ def plot_figure_7_GIRK():
         plot_traces_GIRK_v2(ax_a1, plateau_traces['Before_ML297'], plateau_traces['After_ML297'], 
                             'WT', 'ML297', after_color='gold', add_legend=True, add_scale=True)
         
-        # Col 1: GNB1
+        # Col 1: I80T/+
         ax_a2 = fig.add_subplot(gs[0, 1])
         plot_traces_GIRK_v2(ax_a2, plateau_traces['Before_ML297'], plateau_traces['After_ML297'], 
-                            'GNB1', 'ML297', after_color='gold', add_legend=False, add_scale=False)
+                            'I80T/+', 'ML297', after_color='gold', add_legend=False, add_scale=False)
     
     # Col 2: Delta Quantification
     ax_a3 = fig.add_subplot(gs[0, 2])
@@ -1306,10 +1306,10 @@ def plot_figure_7_GIRK():
         plot_traces_GIRK_v2(ax_b1, plateau_traces['Before_ETX'], plateau_traces['After_ETX'], 
                             'WT', 'ETX', after_color='blue', add_legend=True, add_scale=True)
         
-        # Col 1: GNB1
+        # Col 1: I80T/+
         ax_b2 = fig.add_subplot(gs[1, 1])
         plot_traces_GIRK_v2(ax_b2, plateau_traces['Before_ETX'], plateau_traces['After_ETX'], 
-                            'GNB1', 'ETX', after_color='blue', add_legend=False, add_scale=False)
+                            'I80T/+', 'ETX', after_color='blue', add_legend=False, add_scale=False)
 
     # Col 2: Delta Quantification
     ax_b3 = fig.add_subplot(gs[1, 2])
