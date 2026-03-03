@@ -9,6 +9,33 @@ from scipy.signal import find_peaks
 import ast
 import matplotlib.ticker as ticker
 
+# ---------------------------------------------------------------------------
+# Compatibility shim: pandas ≥1.2 dropped multi-dimensional Series indexing
+# that older matplotlib relies on. Patch the three most-used Axes methods to
+# silently coerce pandas Series → numpy arrays before they reach matplotlib.
+# ---------------------------------------------------------------------------
+import matplotlib.axes as _mpl_axes
+import functools as _functools
+
+def _coerce(v):
+    """If v is a pandas Series, return its numpy values; else return as-is."""
+    if isinstance(v, pd.Series):
+        return v.to_numpy()
+    return v
+
+def _patch_ax_method(method_name):
+    original = getattr(_mpl_axes.Axes, method_name)
+    @_functools.wraps(original)
+    def wrapper(self, *args, **kwargs):
+        args = tuple(_coerce(a) for a in args)
+        kwargs = {k: _coerce(v) for k, v in kwargs.items()}
+        return original(self, *args, **kwargs)
+    setattr(_mpl_axes.Axes, method_name, wrapper)
+
+for _m in ('plot', 'errorbar', 'fill_between', 'scatter'):
+    _patch_ax_method(_m)
+# ---------------------------------------------------------------------------
+
 try:
     from analysis_utils import calculate_AHP_duration, AHP_time_to_peak
 except ImportError:
@@ -29,11 +56,25 @@ except ImportError:
 COLORS = {
     'WT': 'black',
     'GNB1': 'red',
+    'I80T/+': 'red',
     'WT_Male': 'gray',
     'GNB1_Male': 'lightcoral',
+    'I80T/+_Male': 'lightcoral',
     'WT_Female': 'black',
-    'GNB1_Female': 'darkred'
+    'GNB1_Female': 'darkred',
+    'I80T/+_Female': 'darkred'
 }
+
+# Display name mapping: data uses 'GNB1', figures show 'I80T/+'
+GENOTYPE_DISPLAY = {'GNB1': 'I80T/+'}
+
+def rename_genotype(df, col='Genotype'):
+    """Rename GNB1 → I80T/+ for display purposes. Returns a copy."""
+    if df is None or col not in df.columns:
+        return df
+    df = df.copy()
+    df[col] = df[col].replace(GENOTYPE_DISPLAY)
+    return df
 
 FI_CURRENTS_TO_PLOT = [50, 100, 150, 200, 250, 300, 350]
 DATA_ROOT = 'paper_data'
@@ -429,9 +470,13 @@ def plot_longitudinal_lines(ax, data, x_col, y_col, hue_col, time_order):
         sub = summary[summary[hue_col] == group].sort_values('x_pos')
         color = COLORS.get(group, 'blue')
         
-        ax.errorbar(sub['x_pos'], sub['mean'], yerr=sub['sem'], fmt='o', 
+        x = sub['x_pos'].to_numpy()
+        y = sub['mean'].to_numpy()
+        e = sub['sem'].to_numpy()
+        
+        ax.errorbar(x, y, yerr=e, fmt='o', 
                     color=color, capsize=1, markersize=2, elinewidth=0.8, label=group)
-        ax.plot(sub['x_pos'], sub['mean'], color=color, linestyle='-', linewidth=0.8)
+        ax.plot(x, y, color=color, linestyle='-', linewidth=0.8)
         
         # Track max
         curr_max = (sub['mean'] + sub['sem']).max()
@@ -447,12 +492,15 @@ def plot_dvc_hourly(ax, stats_df, genotype_col='Genotype'):
     ax.axvspan(17, 23, color='blue', alpha=0.1, lw=0)
     ax.axvspan(6, 17, color='white', alpha=0.1, lw=0)
 
-    for group in ['WT', 'GNB1']:
+    for group in ['WT', 'GNB1', 'I80T/+']:
         subset = stats_df[stats_df[genotype_col] == group].sort_values('Hour')
         if subset.empty: continue
         color = COLORS.get(group, 'black')
-        ax.plot(subset['Hour'], subset['Mean'], color=color, label=group, linewidth=1)
-        ax.fill_between(subset['Hour'], subset['Mean'] - subset['SEM'], subset['Mean'] + subset['SEM'], color=color, alpha=0.2, lw=0)
+        hours = subset['Hour'].to_numpy()
+        mean = subset['Mean'].to_numpy()
+        sem = subset['SEM'].to_numpy()
+        ax.plot(hours, mean, color=color, label=group, linewidth=1)
+        ax.fill_between(hours, mean - sem, mean + sem, color=color, alpha=0.2, lw=0)
 
     ax.set_xlim(0, 23)
     ax.set_xticks([0, 6, 12, 17, 23])

@@ -89,19 +89,33 @@ def plot_figure_1_behavior():
     if df_tmaze_entries is not None:
         df_tmaze_entries['Total_Entries'] = df_tmaze_entries[['Start : entries', 'Left Arm : entries', 'Right Arm : entries']].sum(axis=1, skipna=True)
 
-    # Create Figure Layout:
-    # ROW 1: A (Mouse Image) | B (Body Weight - 2 cols)
-    # ROW 2: C (Tracing + Locomotion) | D (Anxiety)
-    # ROW 3: F (Circadian) | G (Dark Activity)
-    # ROW 4: H (T-maze tracing) | I (Distance) | J (Entries) | K (Alternation)
-    fig = plt.figure(figsize=(6.93, 9))  # 17.6cm width (6.93 inches)
+    # Rename GNB1 → I80T/+ for display
+    df_weights = rename_genotype(df_weights)
+    df_of_loco = rename_genotype(df_of_loco)
+    df_of_anx = rename_genotype(df_of_anx)
+    df_dvc_hourly = rename_genotype(df_dvc_hourly)
+    df_dvc_cages = rename_genotype(df_dvc_cages)
+    df_tmaze = rename_genotype(df_tmaze)
+    df_tmaze_entries = rename_genotype(df_tmaze_entries)
+
+    # Genotype order for all bar plots
+    geno_order = ['WT', 'I80T/+']
+
+    # =========================================================================
+    # FIGURE LAYOUT (matching reference):
+    # ROW 1: A (Mouse Image placeholder) | B (Body Weight - wider)
+    # ROW 2: C (Tracing placeholder + Locomotion bar) | D (Tracing placeholder + Anxiety bar)
+    # ROW 3: E (Circadian Activity - wide) | F (Dark Phase bar)
+    # ROW 4: G (T-maze tracing placeholder) | H (Distance) | I (Entries) | J (Alternation)
+    # =========================================================================
+    fig = plt.figure(figsize=(6.93, 9))  # 17.6cm width
     
-    # Main grid with 4 rows
     gs = fig.add_gridspec(4, 1, hspace=0.6,
                          height_ratios=[1, 1, 1, 1])
 
-    # ===== ROW 1 =====
-    gs_row1 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[0], wspace=0.4, width_ratios=[1.5, 1, 1, 0.5])
+    # ===== ROW 1: A (Mouse Image) | B (Body Weight) =====
+    gs_row1 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[0], wspace=0.4, 
+                                               width_ratios=[1, 1.5])
     
     # Panel A: Mouse Image placeholder
     ax_a = fig.add_subplot(gs_row1[0])
@@ -114,8 +128,8 @@ def plot_figure_1_behavior():
     for spine in ax_a.spines.values():
         spine.set_visible(False)
     
-    # Panel B: Body Weight (spans 2 cols - aligned with D and G)
-    ax_b = fig.add_subplot(gs_row1[1:3])
+    # Panel B: Developmental Body Weight
+    ax_b = fig.add_subplot(gs_row1[1])
     add_subplot_label(ax_b, "B")
     if df_weights is not None:
         summary = df_weights.groupby(['Timepoint_Label', 'Genotype'])['Weight_g'].agg(['mean', 'sem']).reset_index()
@@ -123,7 +137,9 @@ def plot_figure_1_behavior():
         
         plot_longitudinal_lines(ax_b, df_weights, 'Timepoint_Label', 'Weight_g', 'Genotype', 
                                 time_order=['P8-P10', 'P28', 'Adult'])
-        ax_b.set_title('Body Weight', fontsize=8)
+        ax_b.set_title('Developmental Body Weight', fontsize=8)
+        # Relabel x-ticks for display
+        ax_b.set_xticklabels(['P8-P10', 'P28', 'Adult (P49)'])
         ax_b.legend(frameon=False, fontsize=7)
         ax_b.set_ylabel('Weight (g)')
         
@@ -134,105 +150,121 @@ def plot_figure_1_behavior():
         annotate_from_stats(ax_b, df_stats, "Fig 1B", "P8-P10", x1=0, x2=0, y_pos=get_y_for_time('P8-P10'), bracket=True)
         annotate_from_stats(ax_b, df_stats, "Fig 1B", "P28", x1=1, x2=1, y_pos=get_y_for_time('P28'), bracket=True)
         annotate_from_stats(ax_b, df_stats, "Fig 1B", "Adult", x1=2, x2=2, y_pos=get_y_for_time('Adult'), bracket=True)
-        
-        # Add N numbers at each time point
-        time_order = ['P8-P10', 'P28', 'Adult']
-        for idx, timepoint in enumerate(time_order):
-            tp_data = df_weights[df_weights['Timepoint_Label'] == timepoint]
-            n_wt = len(tp_data[tp_data['Genotype'] == 'WT'])
-            n_gnb1 = len(tp_data[tp_data['Genotype'] == 'GNB1'])
-            
-            # Position N numbers below the plot
-            y_min = ax_b.get_ylim()[0]
-            y_range = ax_b.get_ylim()[1] - ax_b.get_ylim()[0]
-            n_y_pos = y_min - 0.12 * y_range  # Position below x-axis
-            
-            ax_b.text(idx, n_y_pos, f'n={n_wt}/{n_gnb1}', 
-                     ha='center', va='top', fontsize=6, color='gray')
 
-    # ===== ROW 2 ===== (C, D with equal 1:1 split)
-    gs_row2 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1], wspace=0.4, width_ratios=[1, 1])
+    # ===== ROW 2: C (Tracing + Locomotion) | D (Tracing + Anxiety) =====
+    gs_row2 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1], wspace=0.4)
     
-    # Panel C: Locomotion
-    ax_c = fig.add_subplot(gs_row2[0])
-    add_subplot_label(ax_c, "C")
+    # Panel C: Open Field Locomotion (tracing placeholder + bar)
+    gs_c = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row2[0], wspace=0.2, 
+                                            width_ratios=[0.6, 1])
+    # C-left: tracing placeholder
+    ax_c_trace = fig.add_subplot(gs_c[0])
+    add_subplot_label(ax_c_trace, "C")
+    ax_c_trace.text(0.5, 0.75, 'WT', ha='center', va='center', fontsize=8, fontweight='bold')
+    ax_c_trace.text(0.5, 0.25, 'I80T/+', ha='center', va='center', fontsize=8, fontweight='bold', color='red')
+    ax_c_trace.set_facecolor('#f8f8f8')
+    ax_c_trace.set_xticks([])
+    ax_c_trace.set_yticks([])
+    for spine in ax_c_trace.spines.values():
+        spine.set_visible(False)
+    # C-right: bar plot
+    ax_c = fig.add_subplot(gs_c[1])
     if df_of_loco is not None:
-        plot_bar_scatter(ax_c, df_of_loco, 'Genotype', 'Distance (m)', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax_c, df_of_loco, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order)
         ax_c.set_title('Locomotion (Open Field)', fontsize=8)
         annotate_from_stats(ax_c, df_stats, "Fig 1C", "Locomotion", x1=0, x2=1, y_pos=get_safe_y(df_of_loco['Distance (m)']))
 
-    # Panel D: Anxiety
-    ax_d = fig.add_subplot(gs_row2[1])
-    add_subplot_label(ax_d, "D")
+    # Panel D: Anxiety (tracing placeholder + bar)
+    gs_d = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row2[1], wspace=0.2,
+                                            width_ratios=[0.6, 1])
+    # D-left: tracing placeholder
+    ax_d_trace = fig.add_subplot(gs_d[0])
+    add_subplot_label(ax_d_trace, "D")
+    ax_d_trace.text(0.5, 0.5, 'Open Field\nAnxiety Tracing\n(To be added)', 
+              ha='center', va='center', fontsize=7, color='gray', style='italic')
+    ax_d_trace.set_facecolor('#f8f8f8')
+    ax_d_trace.set_xticks([])
+    ax_d_trace.set_yticks([])
+    for spine in ax_d_trace.spines.values():
+        spine.set_visible(False)
+    # D-right: bar plot
+    ax_d = fig.add_subplot(gs_d[1])
     if df_of_anx is not None:
-        plot_bar_scatter(ax_d, df_of_anx, 'Genotype', 'Center_Outer_Time_Ratio', 'Genotype', order=['WT', 'GNB1'])
+        plot_bar_scatter(ax_d, df_of_anx, 'Genotype', 'Center_Outer_Time_Ratio', 'Genotype', order=geno_order)
         ax_d.set_title('Anxiety Ratio', fontsize=8)
         ax_d.set_ylabel('Center Outer Time Ratio')
         annotate_from_stats(ax_d, df_stats, "Fig 1D", "Anxiety", x1=0, x2=1, y_pos=get_safe_y(df_of_anx['Center_Outer_Time_Ratio']))
 
-    # ===== ROW 3 ===== (F, G equal width - G aligned with D)
-    gs_row3 = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[2], wspace=0.4, width_ratios=[1, 1, 0])
+    # ===== ROW 3: E (Circadian Activity) | F (Total Dark Phase) =====
+    gs_row3 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[2], wspace=0.4, 
+                                               width_ratios=[1.2, 1])
     
-    # Panel F: Circadian Activity
-    ax_f = fig.add_subplot(gs_row3[0])
-    add_subplot_label(ax_f, "F")
+    # Panel E: Circadian Activity
+    ax_e = fig.add_subplot(gs_row3[0])
+    add_subplot_label(ax_e, "E")
     if df_dvc_hourly is not None:
-        plot_dvc_hourly(ax_f, df_dvc_hourly)
-        ax_f.set_title('Circadian Activity', fontsize=8)
-        ax_f.legend(frameon=False, loc='upper left', fontsize=7)
+        plot_dvc_hourly(ax_e, df_dvc_hourly)
+        ax_e.set_title('Circadian Activity', fontsize=8)
+        # Add Dark Phase label to legend
+        from matplotlib.patches import Patch
+        handles, labels = ax_e.get_legend_handles_labels()
+        handles.append(Patch(facecolor='blue', alpha=0.1, label='Dark Phase'))
+        labels.append('Dark Phase')
+        ax_e.legend(handles=handles, labels=labels, frameon=False, loc='upper left', fontsize=7)
 
-    # Panel G: Total Activity (Dark Phase)
-    ax_g = fig.add_subplot(gs_row3[1])
-    add_subplot_label(ax_g, "G")
+    # Panel F: Total Activity (Dark Phase)
+    ax_f = fig.add_subplot(gs_row3[1])
+    add_subplot_label(ax_f, "F")
     if df_dvc_cages is not None:
-        plot_bar_scatter(ax_g, df_dvc_cages, 'Genotype', 'Sum_All_Dark', 'Genotype', order=['WT', 'GNB1'])
-        ax_g.set_title('Total Activity (Dark Phase)', fontsize=8)
-        ax_g.set_ylabel('Summed Activity')
+        plot_bar_scatter(ax_f, df_dvc_cages, 'Genotype', 'Sum_All_Dark', 'Genotype', order=geno_order)
+        ax_f.set_title('Total Activity (Dark Phase)', fontsize=8)
+        ax_f.set_ylabel('Summed Activity (m)')
         if df_stats is not None:
-            annotate_from_stats(ax_g, df_stats, "Fig 1G", "DVC Dark Phase", x1=0, x2=1, y_pos=get_safe_y(df_dvc_cages['Sum_All_Dark']))
+            annotate_from_stats(ax_f, df_stats, "Fig 1G", "DVC Dark Phase", x1=0, x2=1, y_pos=get_safe_y(df_dvc_cages['Sum_All_Dark']))
 
-    # ===== ROW 4 ===== (H, I, J, K with equal widths)
-    gs_row4 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[3], wspace=0.4, width_ratios=[1, 1, 1, 1])
-    # Panel H: T-Maze Tracing Plots Placeholder
-    ax_h = fig.add_subplot(gs_row4[0])
-    add_subplot_label(ax_h, "H")
-    ax_h.text(0.5, 0.5, 'T-Maze\nTracing\nPlots', 
-              ha='center', va='center', fontsize=7, color='gray', style='italic')
-    ax_h.set_xticks([])
-    ax_h.set_yticks([])
-    ax_h.set_facecolor('#f5e6c8')  # Tan color
-    for spine in ax_h.spines.values():
+    # ===== ROW 4: G (T-maze tracing) | H (Distance) | I (Entries) | J (Alternation) =====
+    gs_row4 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[3], wspace=0.5, 
+                                               width_ratios=[1, 1, 1, 1])
+    
+    # Panel G: T-Maze Tracing Placeholder
+    ax_g = fig.add_subplot(gs_row4[0])
+    add_subplot_label(ax_g, "G")
+    ax_g.text(0.5, 0.75, 'WT', ha='center', va='center', fontsize=8, fontweight='bold')
+    ax_g.text(0.5, 0.25, 'I80T/+', ha='center', va='center', fontsize=8, fontweight='bold', color='red')
+    ax_g.set_xticks([])
+    ax_g.set_yticks([])
+    ax_g.set_facecolor('#f5e6c8')
+    for spine in ax_g.spines.values():
         spine.set_visible(False)
     
-    # Panel I: Distance Traveled
-    ax_i = fig.add_subplot(gs_row4[1])
+    # Panel H: Distance Traveled
+    ax_h = fig.add_subplot(gs_row4[1])
+    add_subplot_label(ax_h, "H")
+    if df_tmaze_entries is not None:
+        plot_bar_scatter(ax_h, df_tmaze_entries, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order)
+        ax_h.set_title('Distance Traveled', fontsize=8)
+        ax_h.set_ylabel('Distance (m)')
+        ax_h.yaxis.set_major_locator(plt.MaxNLocator(6))
+        annotate_from_stats(ax_h, df_stats, "Fig 1I", "Distance", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Distance (m)']))
+    
+    # Panel I: Total Port Entries
+    ax_i = fig.add_subplot(gs_row4[2])
     add_subplot_label(ax_i, "I")
     if df_tmaze_entries is not None:
-        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Distance (m)', 'Genotype', order=['WT', 'GNB1'])
-        ax_i.set_title('Distance Traveled', fontsize=8)
-        ax_i.set_ylabel('Distance (m)')
-        # Add more y-ticks
-        ax_i.yaxis.set_major_locator(plt.MaxNLocator(6))
-        annotate_from_stats(ax_i, df_stats, "Fig 1I", "Distance", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Distance (m)']))
+        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Entries', 'Genotype', order=geno_order)
+        ax_i.set_title('Total Port Entries', fontsize=8)
+        ax_i.set_ylabel('Total Entries')
+        annotate_from_stats(ax_i, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Entries']))
     
-    # Panel J: Total Port Entries
-    ax_j = fig.add_subplot(gs_row4[2])
+    # Panel J: Spontaneous Alternation
+    ax_j = fig.add_subplot(gs_row4[3])
     add_subplot_label(ax_j, "J")
-    if df_tmaze_entries is not None:
-        plot_bar_scatter(ax_j, df_tmaze_entries, 'Genotype', 'Total_Entries', 'Genotype', order=['WT', 'GNB1'])
-        ax_j.set_title('Total Port Entries', fontsize=8)
-        ax_j.set_ylabel('Total Entries')
-        annotate_from_stats(ax_j, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Entries']))
-    
-    # Panel K: Spontaneous Alternation
-    ax_k = fig.add_subplot(gs_row4[3])
-    add_subplot_label(ax_k, "K")
     if df_tmaze is not None:
-        plot_bar_scatter(ax_k, df_tmaze, 'Genotype', 'Percent_Alternations', 'Genotype', order=['WT', 'GNB1'])
-        ax_k.set_title('Spontaneous Alternation', fontsize=8)
-        ax_k.set_ylabel('Percent Alternations')
-        ax_k.set_ylim(-1, 100)
-        annotate_from_stats(ax_k, df_stats, "Fig 1K", "Alternation", x1=0, x2=1, y_pos=90)
+        plot_bar_scatter(ax_j, df_tmaze, 'Genotype', 'Percent_Alternations', 'Genotype', order=geno_order)
+        ax_j.set_title('Spontaneous Alternation', fontsize=8)
+        ax_j.set_ylabel('Percent Alternations')
+        ax_j.set_ylim(-1, 100)
+        annotate_from_stats(ax_j, df_stats, "Fig 1K", "Alternation", x1=0, x2=1, y_pos=90)
 
     save_current_fig('Figure_1_Behavior')
 
@@ -483,7 +515,7 @@ def plot_figure_2_physiology():
             label_text = f"{genotype} (n={n_cells})"
             color = COLORS.get(genotype, 'gray')
             ax_e.errorbar(
-                subset['Current'], subset['mean_rate'], yerr=subset['sem_rate'],
+                subset['Current'].to_numpy(), subset['mean_rate'].to_numpy(), yerr=subset['sem_rate'].to_numpy(),
                 label=label_text, color=color, marker='o', capsize=2, markersize=3
             )
         ax_e.set_xlabel('Current (pA)')
@@ -570,7 +602,7 @@ def plot_figure_2_physiology():
             y_err = 'sem_isi' if 'sem_isi' in subset.columns else 'sem'
             
             ax_i.errorbar(
-                subset['Spike_Index'], subset[y_col], yerr=subset[y_err],
+                subset['Spike_Index'].to_numpy(), subset[y_col].to_numpy(), yerr=subset[y_err].to_numpy(),
                 label=label_text, color=color, marker='o', capsize=2, markersize=3
             )
         
