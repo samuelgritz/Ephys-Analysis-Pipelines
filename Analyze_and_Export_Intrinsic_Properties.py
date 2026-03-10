@@ -207,6 +207,19 @@ if __name__ == "__main__":
           f"(Missing 'Voltage-Sag' in Inclusion column).")
 
     # =========================================================================
+    # STEP 7.5 — Apply Input Resistance exclusion (>400 MOhm)
+    # =========================================================================
+    print("\nApplying strict exclusion criteria for Input Resistance (> 400 MOhm)...")
+    rin_dropped = 0
+    for index, row in intrinsic_df.iterrows():
+        if pd.notna(row['Input_Resistance_MOhm']) and row['Input_Resistance_MOhm'] > 400:
+            intrinsic_df.at[index, 'Input_Resistance_MOhm'] = np.nan
+            rin_dropped += 1
+    print(f"-> Set Input Resistance to NaN for {rin_dropped} cells "
+          f"(Input Resistance > 400 MOhm).")
+
+
+    # =========================================================================
     # STEP 8 — Save
     # =========================================================================
     final_output_path = 'paper_data/Physiology_Analysis/intrinsic_properties.csv'

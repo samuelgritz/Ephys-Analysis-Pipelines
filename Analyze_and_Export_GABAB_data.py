@@ -556,6 +556,106 @@ if __name__ == "__main__":
         print(f"  Count: {len(fi_df['Cell_ID'].unique())} cells")
 
         # ==================================================================================================
+        # PLOT F-I CURVES: Gabazine vs Gabazine + Baclofen
+        # ==================================================================================================
+        print("\n--- Plotting F-I Curves (Gabazine vs Gabazine + Baclofen) ---")
+
+        # Compute mean ± SEM across cells for each (Genotype, Condition, Current_pA)
+        fi_summary = (
+            fi_df.groupby(['Genotype', 'Condition', 'Current_pA'])['Firing_Rate_Hz']
+            .agg(mean='mean', sem=lambda x: x.sem())
+            .reset_index()
+        )
+
+        GENOTYPES   = ['WT',    'GNB1']
+        COLORS_BASE = {'WT': 'black',  'GNB1': 'darkred'}
+        COLORS_BAC  = {'WT': 'gray',   'GNB1': 'lightcoral'}
+        LABELS_BASE = {'WT': 'WT – Gabazine',    'GNB1': 'GNB1 – Gabazine'}
+        LABELS_BAC  = {'WT': 'WT – Gab + Baclofen', 'GNB1': 'GNB1 – Gab + Baclofen'}
+
+        def _plot_fi_for_genotype(ax, geno, fi_summary, fi_df):
+            """Plot Gabazine and Gabazine+Baclofen FI curves for one genotype on ax."""
+            n_gab = fi_df[(fi_df['Genotype'] == geno) & (fi_df['Condition'] == 'Gabazine')]['Cell_ID'].nunique()
+            n_bac = fi_df[(fi_df['Genotype'] == geno) & (fi_df['Condition'] == 'Gabazine + Baclofen')]['Cell_ID'].nunique()
+
+            for condition, color, label_suffix, n in [
+                ('Gabazine',             COLORS_BASE[geno], f'Gabazine (n={n_gab})',             n_gab),
+                ('Gabazine + Baclofen',  COLORS_BAC[geno],  f'Gab + Baclofen (n={n_bac})',       n_bac),
+            ]:
+                subset = fi_summary[(fi_summary['Genotype'] == geno) & (fi_summary['Condition'] == condition)]
+                if subset.empty:
+                    continue
+                ax.errorbar(
+                    subset['Current_pA'].to_numpy(), subset['mean'].to_numpy(),
+                    yerr=subset['sem'].to_numpy(),
+                    fmt='-o', color=color, label=label_suffix,
+                    capsize=3, markersize=4, linewidth=1.5
+                )
+
+            ax.set_xlabel('Current (pA)', fontsize=9)
+            ax.set_ylabel('Firing Rate (Hz)', fontsize=9)
+            ax.set_title(f'{geno}', fontsize=10, fontweight='bold')
+            ax.legend(frameon=False, fontsize=8)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+        # --- Figure 1: Separate panels per genotype ---
+        fig_sep, axes_sep = plt.subplots(1, 2, figsize=(10, 4.5), sharey=True)
+        fig_sep.suptitle('F-I Curves: Gabazine vs Gabazine + Baclofen', fontsize=11, fontweight='bold')
+
+        for ax, geno in zip(axes_sep, GENOTYPES):
+            _plot_fi_for_genotype(ax, geno, fi_summary, fi_df)
+
+        axes_sep[1].set_ylabel('')  # Remove duplicate y-label on right panel
+        plt.tight_layout()
+        fi_sep_path = os.path.join(PLOTS_DIR, 'FI_Curves_Gabazine_vs_Baclofen_byGenotype.png')
+        fig_sep.savefig(fi_sep_path, dpi=300, bbox_inches='tight')
+        with plt.rc_context({'svg.fonttype': 'none'}):
+            fig_sep.savefig(fi_sep_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+        plt.close(fig_sep)
+        print(f"  ✓ Saved: {fi_sep_path} (.png + .svg)")
+
+        # --- Figure 2: All four curves on one axis (WT Gab, WT Bac, GNB1 Gab, GNB1 Bac) ---
+        fig_comb, ax_comb = plt.subplots(figsize=(5.5, 4.5))
+        fig_comb.suptitle('F-I Curves: Gabazine vs Gabazine + Baclofen', fontsize=11, fontweight='bold')
+
+        for geno in GENOTYPES:
+            n_gab = fi_df[(fi_df['Genotype'] == geno) & (fi_df['Condition'] == 'Gabazine')]['Cell_ID'].nunique()
+            n_bac = fi_df[(fi_df['Genotype'] == geno) & (fi_df['Condition'] == 'Gabazine + Baclofen')]['Cell_ID'].nunique()
+            for condition, color, label in [
+                ('Gabazine',            COLORS_BASE[geno], f'{geno} – Gabazine (n={n_gab})'),
+                ('Gabazine + Baclofen', COLORS_BAC[geno],  f'{geno} – Gab + Baclofen (n={n_bac})'),
+            ]:
+                subset = fi_summary[(fi_summary['Genotype'] == geno) & (fi_summary['Condition'] == condition)]
+                if subset.empty:
+                    continue
+                # Dashed line for Baclofen condition
+                ls = '--' if 'Baclofen' in condition else '-'
+                ax_comb.errorbar(
+                    subset['Current_pA'].to_numpy(), subset['mean'].to_numpy(),
+                    yerr=subset['sem'].to_numpy(),
+                    fmt='o', linestyle=ls, color=color, label=label,
+                    capsize=3, markersize=4, linewidth=1.5
+                )
+
+        ax_comb.set_xlabel('Current (pA)', fontsize=9)
+        ax_comb.set_ylabel('Firing Rate (Hz)', fontsize=9)
+        ax_comb.legend(frameon=False, fontsize=7, loc='upper left')
+        ax_comb.spines['top'].set_visible(False)
+        ax_comb.spines['right'].set_visible(False)
+        plt.tight_layout()
+        fi_comb_path = os.path.join(PLOTS_DIR, 'FI_Curves_Gabazine_vs_Baclofen_Combined.png')
+        fig_comb.savefig(fi_comb_path, dpi=300, bbox_inches='tight')
+        with plt.rc_context({'svg.fonttype': 'none'}):
+            fig_comb.savefig(fi_comb_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+        plt.close(fig_comb)
+        print(f"  ✓ Saved: {fi_comb_path} (.png + .svg)")
+
+        # Old midpoint analysis removed and replaced with difference midpoint analysis below
+
+
+
+        # ==================================================================================================
         # 7. Baclofen-Induced Reduction (Difference Analysis)
         # ==================================================================================================
         print("\n--- Analyzing Baclofen-Induced Reduction (Stats) ---")
@@ -577,7 +677,8 @@ if __name__ == "__main__":
                 
                 if not bac_row.empty:
                     bac_fr = bac_row['Firing_Rate_Hz'].values[0]
-                    diff_fr = gab_fr - bac_fr 
+                    # Difference: Baclofen - Gabazine (negative values expected)
+                    diff_fr = bac_fr - gab_fr 
                     
                     diff_rows.append({
                         'Cell_ID': cell_id,
@@ -611,11 +712,11 @@ if __name__ == "__main__":
                     means = subset.groupby('Current_pA')['Difference_FR'].mean()
                     sems = subset.groupby('Current_pA')['Difference_FR'].sem()
                     x_vals = means.index
-                    plt.errorbar(x_vals, means.values, yerr=sems.values, 
+                    plt.errorbar(x_vals.to_numpy(), means.to_numpy(), yerr=sems.to_numpy(), 
                                  fmt='-o', color=color, label=f"{geno} (n={len(subset['Cell_ID'].unique())})", 
                                  capsize=3, markersize=5)
                 
-                plt.title('Baclofen-Induced Firing Reduction\n(Gabazine - Gabazine+Baclofen)')
+                plt.title('Baclofen-Induced Firing Difference\n(Gabazine+Baclofen - Gabazine)')
                 plt.ylabel('Δ Firing Rate (Hz)')
                 plt.xlabel('Current (pA)')
                 plt.legend(frameon=False)
@@ -625,9 +726,118 @@ if __name__ == "__main__":
                 ax.spines['right'].set_visible(False)
                 
                 diff_plot_path = os.path.join(PLOTS_DIR, 'Figure_5_FI_Difference.png')
-                plt.savefig(diff_plot_path, dpi=300)
+                plt.savefig(diff_plot_path, dpi=300, bbox_inches='tight')
+                with plt.rc_context({'svg.fonttype': 'none'}):
+                    plt.savefig(diff_plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
                 plt.close()
-                print(f"✓ Difference plot saved to: {diff_plot_path}")
+                print(f"✓ Difference plot saved to: {diff_plot_path} (.png + .svg)")
+
+                # ==================================================================================================
+                # DIFFERENCE F-I MIDPOINT ANALYSIS (Sigmoid Fit on Baclofen - Gabazine)
+                # ==================================================================================================
+                print("\n--- Difference F-I Midpoint Analysis (Sigmoid Fit) ---")
+                from scipy.optimize import curve_fit
+                import scipy.stats as sci_stats
+                
+                def diff_sigmoid(x, L, x0, k, b):
+                    """Sigmoid for negative differences. L: amplitude (negative), x0: midpoint, k: slope (positive), b: baseline (~0)."""
+                    return L / (1 + np.exp(-k * (x - x0))) + b
+                    
+                diff_midpoint_rows = []
+                diff_fit_dir = os.path.join(PLOTS_DIR, 'FI_Difference_Fits')
+                os.makedirs(diff_fit_dir, exist_ok=True)
+                
+                for cell_id, grp in diff_df.groupby('Cell_ID'):
+                    currents = grp['Current_pA'].to_numpy(dtype=float)
+                    diffs    = grp['Difference_FR'].to_numpy(dtype=float)
+                    mask = ~np.isnan(currents) & ~np.isnan(diffs)
+                    currents, diffs = currents[mask], diffs[mask]
+                    if len(currents) < 4:
+                        continue
+                        
+                    try:
+                        # Guess: amplitude is max negative drop, baseline is 0
+                        L_guess = np.min(diffs) - np.max(diffs)
+                        x0_guess = np.mean(currents)
+                        k_guess = 0.01
+                        b_guess = np.max(diffs)  # expect around 0
+                        
+                        p0 = [L_guess, x0_guess, k_guess, b_guess]
+                        # Bounds: L < 0, x0 > 0, k > 0
+                        bounds = ([-np.inf, 0, 0, -np.inf], [0, np.inf, np.inf, np.inf])
+                        
+                        popt, _ = curve_fit(diff_sigmoid, currents, diffs, p0=p0, bounds=bounds, maxfev=5000)
+                        
+                        r2 = 1 - (np.sum((diffs - diff_sigmoid(currents, *popt))**2) / np.sum((diffs - np.mean(diffs))**2)) if np.var(diffs) > 0 else 0
+                        
+                        diff_midpoint_rows.append({
+                            'Cell_ID': cell_id,
+                            'Genotype': grp['Genotype'].iloc[0],
+                            'Diff_Midpoint': popt[1],
+                            'Max_Drop': popt[0],
+                            'Slope_k': popt[2],
+                            'Baseline': popt[3],
+                            'R_squared': r2
+                        })
+                        
+                    except Exception:
+                        continue
+                        
+                if diff_midpoint_rows:
+                    diff_mid_df = pd.DataFrame(diff_midpoint_rows)
+                    # Filter outlier midpoints (e.g. huge > 1000 pA or < 0 pA)
+                    diff_mid_df = diff_mid_df[(diff_mid_df['Diff_Midpoint'] > 0) & (diff_mid_df['Diff_Midpoint'] < 800)]
+                    
+                    diff_mid_csv = os.path.join(OUTPUT_DIR, 'Baclofen_FI_Difference_Midpoints.csv')
+                    diff_mid_df.to_csv(diff_mid_csv, index=False)
+                    print(f"  ✓ Difference Midpoints exported to: {diff_mid_csv}")
+                    print(f"  Cells with successful fits: {len(diff_mid_df)}")
+                    
+                    # ------------------------------------------------------------------
+                    # Stats for WT vs GNB1 Difference Midpoints (Mann-Whitney U)
+                    # ------------------------------------------------------------------
+                    wt_mids = diff_mid_df[diff_mid_df['Genotype'] == 'WT']['Diff_Midpoint'].dropna()
+                    gnb1_mids = diff_mid_df[diff_mid_df['Genotype'] == 'GNB1']['Diff_Midpoint'].dropna()
+                    
+                    if len(wt_mids) >= 2 and len(gnb1_mids) >= 2:
+                        stat, p = sci_stats.mannwhitneyu(wt_mids, gnb1_mids, alternative='two-sided')
+                        sig = '****' if p < 0.0001 else ('***' if p < 0.001 else ('**' if p < 0.01 else ('*' if p < 0.05 else 'ns')))
+                    else:
+                        p, sig = np.nan, 'n/a'
+                        
+                    print(f"  Stats WT vs GNB1 Difference Midpoints: WT(n={len(wt_mids)}) vs GNB1(n={len(gnb1_mids)})  p={p:.4f} {sig}")
+                    
+                    # ------------------------------------------------------------------
+                    # Bar plot for WT vs GNB1 Difference Midpoints
+                    # ------------------------------------------------------------------
+                    fig_diff_mid, ax_diff_mid = plt.subplots(figsize=(4, 5))
+                    fig_diff_mid.suptitle(f'Midpoint of Baclofen F-I Reduction\n(p={p:.4f})', fontsize=11, fontweight='bold')
+                    
+                    for xi, geno in enumerate(['WT', 'GNB1']):
+                        vals = diff_mid_df[diff_mid_df['Genotype'] == geno]['Diff_Midpoint'].dropna()
+                        if vals.empty: continue
+                        color = 'black' if geno == 'WT' else 'red'
+                        ax_diff_mid.bar(xi, vals.mean(), yerr=vals.sem(), color=color, alpha=0.5,
+                                        width=0.6, capsize=4, zorder=2)
+                        jitter = np.random.default_rng(42).uniform(-0.15, 0.15, size=len(vals))
+                        ax_diff_mid.scatter(xi + jitter, vals.to_numpy(), color=color, s=25,
+                                            alpha=0.8, zorder=3, edgecolors='none')
+                                            
+                    ax_diff_mid.set_xticks([0, 1])
+                    ax_diff_mid.set_xticklabels([f"WT\n(n={len(wt_mids)})", f"GNB1\n(n={len(gnb1_mids)})"], fontsize=9)
+                    ax_diff_mid.set_ylabel('Current for 50% Max Firing Rate Reduction (pA)', fontsize=9)
+                    ax_diff_mid.spines['top'].set_visible(False)
+                    ax_diff_mid.spines['right'].set_visible(False)
+                    plt.tight_layout()
+                    
+                    diff_mid_plot_path = os.path.join(PLOTS_DIR, 'FI_Difference_Midpoints.png')
+                    fig_diff_mid.savefig(diff_mid_plot_path, dpi=300, bbox_inches='tight')
+                    with plt.rc_context({'svg.fonttype': 'none'}):
+                        fig_diff_mid.savefig(diff_mid_plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+                    plt.close(fig_diff_mid)
+                    print(f"  ✓ Difference Midpoint bar plot saved: {diff_mid_plot_path} (.png + .svg)")
+                else:
+                    print("  ⚠ No sigmoid fits converged on difference curves.")
                 
             except Exception as e:
                 print(f"⚠ Stats/Plotting failed: {e}")

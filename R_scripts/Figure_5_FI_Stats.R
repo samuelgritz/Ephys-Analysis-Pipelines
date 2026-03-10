@@ -39,6 +39,26 @@ if (require("lmerTest", quietly = TRUE)) {
   # Save
   write.csv(as.data.frame(ano), "../paper_data/gabab_analysis/Figure_5_FI_Stats_R_LMM.csv")
   
+  # Post-hoc pairwise comparisons using emmeans
+  if (require("emmeans", quietly = TRUE)) {
+    cat("\n--- Post-Hoc Tests (Pairwise Genotype comparisons by Current) ---\n")
+    # Estimated Marginal Means for Genotype separated by Current
+    emm <- emmeans(model, ~ Genotype | Current_pA_Factor)
+    
+    # Pairwise contrast WT vs GNB1 within each Current step
+    posthoc <- pairs(emm)
+    
+    # Adjust across all 8 current steps using Holm-Bonferroni
+    posthoc_adj <- summary(posthoc, by = NULL, adjust = "holm")
+    print(posthoc_adj)
+    
+    # Save posthoc results
+    write.csv(as.data.frame(posthoc_adj), "../paper_data/gabab_analysis/Figure_5_FI_PostHoc_Stats.csv", row.names = FALSE)
+    cat("\n✓ Post-Hoc Stats saved to: ../paper_data/gabab_analysis/Figure_5_FI_PostHoc_Stats.csv\n")
+  } else {
+    cat("\n⚠ 'emmeans' package not installed. Skipping post-hoc tests. (Run 'install.packages(\"emmeans\")' to enable)\n")
+  }
+  
 } else {
   cat("\n[Method] 'lmerTest' not found. Using Standard Repeated Measures ANOVA (aov)...\n")
   cat("Model: Difference ~ Genotype * Current + Error(Subject/Current)\n")

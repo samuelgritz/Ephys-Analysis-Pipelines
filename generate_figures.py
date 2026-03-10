@@ -337,8 +337,8 @@ def plot_figure_2_physiology():
     # Row 2: D (FI traces stacked)    | E (F-I curve)
     # Row 3: F (FI Midpoint)          | G (Rheobase) | H (ISI traces) | I (ISI adaptation)
 
-    fig = plt.figure(figsize=(6.89, 9.0))  # Taller to reduce cramping
-    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[0.65, 0.45, 0.50], hspace=0.6)
+    fig = plt.figure(figsize=(6.89, 9.5))  # Slightly taller for larger traces
+    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[1.6, 0.6, 0.8], hspace=0.35)
 
     # ==========================================================
     # ROW 1: A | B | C
@@ -348,17 +348,38 @@ def plot_figure_2_physiology():
     # ==========================================================
     gs_row1 = gridspec.GridSpecFromSubplotSpec(
         1, 3, subplot_spec=outer_grid[0],
-        width_ratios=[0.22, 0.39, 0.39], wspace=0.45)
+        width_ratios=[0.33, 0.33, 0.34], wspace=0.35)
 
-    # --- Panel A: Input Resistance bar ---
-    ax_a = fig.add_subplot(gs_row1[0])
-    add_subplot_label(ax_a, "A")
+    # --- Panel A: Input Resistance traces (stacked) + bar ---
+    gs_A = gridspec.GridSpecFromSubplotSpec(
+        2, 2, subplot_spec=gs_row1[0],
+        height_ratios=[0.60, 0.40], hspace=0.15, wspace=0.25)
+    
+    # A-top: Input Resistance traces
+    ax_a_wt  = fig.add_subplot(gs_A[0, 0])
+    ax_a_gnb = fig.add_subplot(gs_A[0, 1])
+    add_subplot_label(ax_a_wt, "A")
+    
+    if raw_traces_path and master_df is not None:
+        from plotting_utils import plot_input_resistance_comparison
+        plot_input_resistance_comparison(ax_a_wt, ax_a_gnb, raw_traces_path, master_df,
+                                    target_wt='04232024_c2', target_gnb1='05142025_c2')
+        ax_a_wt.set_ylim(-85, -60)
+        ax_a_gnb.set_ylim(-85, -60)
+    else:
+        plot_trace_placeholder(ax_a_wt, "Unavailable")
+        plot_trace_placeholder(ax_a_gnb, "Unavailable")
+
+    # A-bottom: Input Resistance bar
+    ax_a = fig.add_subplot(gs_A[1, :])
     if df_intrinsic is not None and 'Input_Resistance_MOhm' in df_intrinsic.columns:
         plot_bar_scatter(ax_a, df_intrinsic, 'Genotype', 'Input_Resistance_MOhm',
                          'Genotype', order=['WT', 'I80T/+'])
         ax_a.set_ylabel('Input Resistance (MΩ)', fontsize=7)
         ax_a.set_title('Input Resistance', fontsize=8)
-        ax_a.set_box_aspect(1.5)
+        ax_a.set_ylim(0, 400)
+        ax_a.set_yticks([100, 200, 300, 400])
+        ax_a.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_a, df_stats, "Fig 2A", "Input Resistance",
                                 x1=0, x2=1,
@@ -369,7 +390,7 @@ def plot_figure_2_physiology():
     # --- Panel B: Voltage Sag traces (stacked) + Voltage Sag bar ---
     gs_B = gridspec.GridSpecFromSubplotSpec(
         2, 2, subplot_spec=gs_row1[1],
-        height_ratios=[0.55, 0.45], hspace=0.4, wspace=0.25)
+        height_ratios=[0.60, 0.40], hspace=0.15, wspace=0.25)
 
     # B-top: two trace axes side by side (WT left, I80T/+ right)
     ax_b_wt  = fig.add_subplot(gs_B[0, 0])
@@ -393,7 +414,8 @@ def plot_figure_2_physiology():
                          'Genotype', order=['WT', 'I80T/+'])
         ax_b_bar.set_ylabel('Voltage Sag (%)', fontsize=7)
         ax_b_bar.set_title('Voltage Sag', fontsize=8)
-        ax_b_bar.set_box_aspect(0.6)
+        ax_b_bar.set_ylim(bottom=0)
+        ax_b_bar.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_b_bar, df_stats, "Fig 2A", "Voltage Sag",
                                 x1=0, x2=1,
@@ -404,7 +426,7 @@ def plot_figure_2_physiology():
     # --- Panel C: AP traces (stacked) + AHP Decay bar ---
     gs_C = gridspec.GridSpecFromSubplotSpec(
         2, 2, subplot_spec=gs_row1[2],
-        height_ratios=[0.55, 0.45], hspace=0.4, wspace=0.25)
+        height_ratios=[0.60, 0.40], hspace=0.15, wspace=0.25)
 
     ax_c_wt  = fig.add_subplot(gs_C[0, 0])
     ax_c_gnb = fig.add_subplot(gs_C[0, 1])
@@ -431,7 +453,8 @@ def plot_figure_2_physiology():
             plot_example_rheobase_and_sweeps(ax_c_gnb, raw_traces_path, master_df=master_df,
                                              target_cell_id=target_gnb_rheo,
                                              sweep_idx=sweep_idx_gnb,
-                                             analysis_df=df_ap_ahp, show_values=False)
+                                             analysis_df=df_ap_ahp, show_values=False,
+                                             show_annotations=False, color='red')
             ax_c_gnb.axis('off')
             ax_c_gnb.text(0.02, 0.95, 'I80T/+', transform=ax_c_gnb.transAxes,
                           fontsize=8, fontweight='bold', va='top', color='red')
@@ -452,7 +475,8 @@ def plot_figure_2_physiology():
                          'Genotype', order=['WT', 'I80T/+'])
         ax_c_bar.set_ylabel('AHP Area\n(mV·ms)', fontsize=7)
         ax_c_bar.set_title('AHP Decay', fontsize=8)
-        ax_c_bar.set_box_aspect(0.6)
+        ax_c_bar.set_ylim(bottom=0)
+        ax_c_bar.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_c_bar, df_stats, "Fig 2E", "AHP Decay",
                                 x1=0, x2=1,
@@ -461,11 +485,11 @@ def plot_figure_2_physiology():
         ax_c_bar.text(0.5, 0.5, 'AHP Missing', ha='center', color='red')
 
     # ==========================================================
-    # ROW 2: D (FI example traces stacked) | E (F-I curve)
+    # ROW 2: D (FI example traces stacked) | E (F-I curve) | F (FI Midpoint)
     # ==========================================================
     gs_row2 = gridspec.GridSpecFromSubplotSpec(
-        1, 2, subplot_spec=outer_grid[1],
-        width_ratios=[0.40, 0.60], wspace=0.35)
+        1, 3, subplot_spec=outer_grid[1],
+        width_ratios=[0.45, 0.30, 0.25], wspace=0.4)
 
     # Panel D: FI traces stacked
     gs_d = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row2[0], hspace=0.1)
@@ -483,8 +507,8 @@ def plot_figure_2_physiology():
         wt_trace, wt_current     = None, None
         gnb1_trace, gnb1_current = None, None
 
-        preferred_wt   = ['04042024_c1', '02262024_c2', '03142024_c1', '02132024_c2']
-        preferred_gnb1 = ['07302024_c3', '02132024_c2', '10312025_c1', '04042024_c2']
+        preferred_wt   = ['03262024_c2', '02012024_c1', '04042024_c1', '02262024_c2', '03142024_c1']
+        preferred_gnb1 = ['07232024_c6', '10312025_c3', '07302024_c3', '02132024_c2', '10312025_c1']
         for cell in preferred_wt + wt_cells[:30]:
             t, c = find_200pA_trace_direct(cell, raw_traces_path)
             if t is not None:
@@ -529,9 +553,10 @@ def plot_figure_2_physiology():
         ax_d_wt.axis('off')
         ax_d_gnb.axis('off')
 
-    # Panel E: F-I curve
+    # --- Panel E: F-I Curve ---
     ax_e = fig.add_subplot(gs_row2[1])
     add_subplot_label(ax_e, "E")
+    ax_e.set_box_aspect(1)
     if fi_df_final is not None:
         for genotype in fi_df_final['Genotype'].unique():
             subset = fi_df_final[fi_df_final['Genotype'] == genotype]
@@ -552,20 +577,21 @@ def plot_figure_2_physiology():
         ax_e.text(0.5, 0.5, 'Curve Data Missing', ha='center', color='red')
 
     # ==========================================================
-    # ROW 3: F (FI Midpoint) | G (Rheobase) | H (ISI traces) | I (ISI adaptation)
+    # ROW 3: G (Rheobase) | H (ISI traces) | I (ISI adaptation)
     # ==========================================================
     gs_row3 = gridspec.GridSpecFromSubplotSpec(
-        1, 4, subplot_spec=outer_grid[2],
-        width_ratios=[0.22, 0.22, 0.26, 0.30], wspace=0.4)
+        1, 3, subplot_spec=outer_grid[2],
+        width_ratios=[0.25, 0.40, 0.35], wspace=0.4)
 
     # Panel F: F-I Midpoint
-    ax_f = fig.add_subplot(gs_row3[0])
+    ax_f = fig.add_subplot(gs_row2[2])
     add_subplot_label(ax_f, "F")
     if fi_midpoints_df is not None:
         plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint',
                          'Genotype', order=['WT', 'I80T/+'])
         ax_f.set_ylabel('F-I Curve Midpoint (pA)')
         ax_f.set_title('F-I Midpoint', fontsize=8)
+        ax_f.set_ylim(bottom=0)
         ax_f.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_f, df_stats, 'Fig 2F', 'F-I Curve Midpoint',
@@ -574,7 +600,7 @@ def plot_figure_2_physiology():
         ax_f.text(0.5, 0.5, 'Midpoint Data Missing', ha='center', color='red')
 
     # Panel G: Rheobase
-    ax_rheo = fig.add_subplot(gs_row3[1])
+    ax_rheo = fig.add_subplot(gs_row3[0])
     add_subplot_label(ax_rheo, "G")
     if df_ap_ahp is not None and 'Rheobase_Current' in df_ap_ahp.columns:
         plot_data = df_ap_ahp.dropna(subset=['Rheobase_Current'])
@@ -582,6 +608,7 @@ def plot_figure_2_physiology():
                          'Genotype', order=['WT', 'I80T/+'])
         ax_rheo.set_ylabel('Rheobase (pA)')
         ax_rheo.set_title('Rheobase', fontsize=8)
+        ax_rheo.set_ylim(bottom=0)
         ax_rheo.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_rheo, df_stats, "Fig 2C", "Rheobase",
@@ -590,7 +617,7 @@ def plot_figure_2_physiology():
         ax_rheo.text(0.5, 0.5, 'Rheobase Data Missing', ha='center', color='red')
 
     # Panel H: ISI example traces
-    gs_h = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row3[2], hspace=0.1)
+    gs_h = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row3[1], hspace=0.1)
     ax_h_wt  = fig.add_subplot(gs_h[0])
     ax_h_gnb = fig.add_subplot(gs_h[1])
     add_subplot_label(ax_h_wt, "H")
@@ -603,7 +630,7 @@ def plot_figure_2_physiology():
         ax_h_gnb.axis('off')
 
     # Panel I: ISI adaptation curve
-    ax_i = fig.add_subplot(gs_row3[3])
+    ax_i = fig.add_subplot(gs_row3[2])
     add_subplot_label(ax_i, "I")
     if isi_df_final is not None and not isi_df_final.empty:
         for genotype in isi_df_final['Genotype'].unique():

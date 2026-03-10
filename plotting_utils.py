@@ -553,33 +553,38 @@ def convert_cell_id_format(cell_id):
 
 # Find ~200pA sweeps from IV_stim
 def find_200pA_trace_direct(cell_id_file, folder, target=200, tolerance=50):
-    """Find sweep closest to target current from IV_stim experiment"""
+    """Find sweep closest to target current from IV_stim or FI experiment"""
     import os
     file_path = os.path.join(folder, f'{cell_id_file}_processed_data.pkl')
     if not os.path.exists(file_path):
         return None, None
     
     try:
+        import pandas as pd
+        import numpy as np
         data = pd.read_pickle(file_path)
-        iv_sweeps = data[data['stim_type'] == 'IV_stim'] if 'stim_type' in data.columns else data
-        
+        if 'stim_type' in data.columns:
+            iv_sweeps = data[data['stim_type'].isin(['IV_stim', 'Coarse_FI', 'Fine_FI', 'Coarse-FI', 'Dend_FI'])]
+        else:
+            iv_sweeps = data
+            
         best_sweep, best_current, best_diff = None, None, float('inf')
         
         for _, row in iv_sweeps.iterrows():
             stim_cmd = row.get('stim_command', None)
             if stim_cmd is not None and hasattr(stim_cmd, '__len__') and len(stim_cmd) > 0:
                 acq = row.get('acquisition_frequency', 20000)
-                start = int(200 * acq / 1000)
-                end = int(700 * acq / 1000)
-                if end <= len(stim_cmd):
-                    current = np.mean(stim_cmd[start:end])
-                    diff = abs(current - target)
-                    if diff < best_diff and diff <= tolerance:
-                        best_diff = diff
-                        best_sweep = row['sweep']
-                        best_current = round(current, 0)
+                # Find the maximum current level more robustly instead of hardcoded indices
+                cmd_arr = np.array(stim_cmd[0] if isinstance(stim_cmd, list) else stim_cmd, dtype=float)
+                current = float(np.max(cmd_arr))
+                diff = abs(current - target)
+                if diff < best_diff and diff <= tolerance:
+                    best_diff = diff
+                    best_sweep = row['sweep']
+                    best_current = round(current, 0)
         return best_sweep, best_current
-    except:
+    except Exception as e:
+        print(f"Error finding 200pA trace for {cell_id_file}: {e}")
         return None, None
 
 # LOOKUP HELPERS 
@@ -747,7 +752,7 @@ def plot_example_AHP_components(ax, trace, sampling_rate=20000, cell_name="Examp
     ax.set_xlabel('Time (ms)')
     ax.set_ylabel('Voltage (mV)')
 
-def plot_example_rheobase_and_sweeps(ax, data_dir, master_df=None, target_cell_id='03142024_c2', sweep_idx=None, analysis_df=None, show_values=True):
+def plot_example_rheobase_and_sweeps(ax, data_dir, master_df=None, target_cell_id='03142024_c2', sweep_idx=None, analysis_df=None, show_values=True, show_annotations=True, color='black'):
     file_path = find_file_for_cell(data_dir, target_cell_id)
     if not file_path:
         plot_trace_placeholder(ax, f"File not found: {target_cell_id}")
@@ -803,7 +808,7 @@ def plot_example_rheobase_and_sweeps(ax, data_dir, master_df=None, target_cell_i
         
         if len(valid_peaks) == 0:
             # No AP found, plot simple trace
-            ax.plot(time, rheobase_trace, color='red', linewidth=1)
+            ax.plot(time, rheobase_trace, color=color, linewidth=1)
             ax.set_xlabel('Time (ms)')
             ax.set_ylabel('Voltage (mV)')
             ax.set_xlim(300, 900)
@@ -834,78 +839,79 @@ def plot_example_rheobase_and_sweeps(ax, data_dir, master_df=None, target_cell_i
         ap_thresh_idx_zoom = ap_thresh_idx - zoom_start_idx
         
         # Plot the main trace
-        ax.plot(zoomed_time, zoomed_trace, color='black', linewidth=1)
+        ax.plot(zoomed_time, zoomed_trace, color=color, linewidth=1)
         
         # Add AHP decay shading (from trough to threshold recovery)
         # Find decay duration
         decay_duration_samples = int(50 / 1000 * sampling_rate)  # 50ms max
         decay_end_idx = min(len(rheobase_trace) - 1, ahp_trough_idx + decay_duration_samples)
         
-        if decay_end_idx > zoom_start_idx and ahp_trough_idx < zoom_end_idx:
-            # Adjust for zoom
-            decay_start_zoom = max(0, ahp_trough_idx - zoom_start_idx)
-            decay_end_zoom = min(len(zoomed_trace), decay_end_idx - zoom_start_idx)
-            
-            # Fill between threshold and trace
-            ax.fill_between(
-                zoomed_time[decay_start_zoom:decay_end_zoom],
-                threshold_voltage,
-                zoomed_trace[decay_start_zoom:decay_end_zoom],
-                color='lightgreen', alpha=0.3, label='AHP Decay Area'
-            )
-        
-        # Add horizontal reference lines and annotations
-        # 1. Threshold line
-        ax.axhline(y=threshold_voltage, color='gray', linestyle='--', linewidth=1, alpha=0.7)
-        thresh_label = 'AP Threshold' if not show_values else f'AP Threshold: {threshold_voltage:.1f} mV'
-        ax.text(zoomed_time[0] + 1, threshold_voltage + 1.5, thresh_label, 
-                fontsize=8, va='bottom', ha='left', color='gray', fontweight='bold')
-        
-        # 2. Peak marker
-        ax.plot(zoomed_time[peak_idx_zoom], peak_voltage, 'ro', markersize=3)
-        ax.text(zoomed_time[peak_idx_zoom] + 1, peak_voltage, 'Peak', 
-                fontsize=8, va='bottom', ha='left', color='red')
-        
-        # 3. AP Size (vertical line from threshold to peak)
-        mid_time = zoomed_time[peak_idx_zoom] - 2
-        ax.plot([mid_time, mid_time], [threshold_voltage, peak_voltage], 'blue', linewidth=1)
-        ax.plot([mid_time-0.5, mid_time+0.5], [threshold_voltage, threshold_voltage], 'blue', linewidth=1)
-        ax.plot([mid_time-0.5, mid_time+0.5], [peak_voltage, peak_voltage], 'blue', linewidth=1)
-        ap_size_label = 'AP Size' if not show_values else f'AP Size\n{ap_size:.1f} mV'
-        ax.text(mid_time - 1, (threshold_voltage + peak_voltage)/2, ap_size_label, 
-                fontsize=7, va='center', ha='right', color='blue')
-        
-        # 4. AHP Amplitude (vertical line from threshold to trough)
-        if ahp_trough_idx_zoom < len(zoomed_time):
-            mid_time_ahp = zoomed_time[ahp_trough_idx_zoom] + 3
-            ax.plot([mid_time_ahp, mid_time_ahp], [ahp_trough_voltage, threshold_voltage], 
-                    'purple', linewidth=1)
-            ax.plot([mid_time_ahp-0.5, mid_time_ahp+0.5], [threshold_voltage, threshold_voltage], 'purple', linewidth=1)
-            ax.plot([mid_time_ahp-0.5, mid_time_ahp+0.5], [ahp_trough_voltage, ahp_trough_voltage], 'purple', linewidth=1)
-            ahp_amp_label = 'AHP Amp' if not show_values else f'AHP Amp\n{ahp_amplitude:.1f} mV'
-            ax.text(mid_time_ahp + 1, (threshold_voltage + ahp_trough_voltage)/2, 
-                    ahp_amp_label, 
-                    fontsize=7, va='center', ha='left', color='purple')
-        
-        # 5. AP Halfwidth (horizontal line at 50% of AP size)
-        halfwidth_voltage = threshold_voltage + (ap_size / 2)
-        # Find where trace crosses halfwidth voltage
-        rising_crossings = np.where(zoomed_trace[:peak_idx_zoom] >= halfwidth_voltage)[0]
-        if len(rising_crossings) > 0:
-            hw_start_idx = rising_crossings[0]
-            falling_crossings = np.where(zoomed_trace[peak_idx_zoom:] <= halfwidth_voltage)[0]
-            if len(falling_crossings) > 0:
-                hw_end_idx = peak_idx_zoom + falling_crossings[0]
-                hw_start_time = zoomed_time[hw_start_idx]
-                hw_end_time = zoomed_time[hw_end_idx]
+        if show_annotations:
+            if decay_end_idx > zoom_start_idx and ahp_trough_idx < zoom_end_idx:
+                # Adjust for zoom
+                decay_start_zoom = max(0, ahp_trough_idx - zoom_start_idx)
+                decay_end_zoom = min(len(zoomed_trace), decay_end_idx - zoom_start_idx)
                 
-                # Draw horizontal line
-                ax.plot([hw_start_time, hw_end_time], [halfwidth_voltage, halfwidth_voltage], 
-                       'orange', linewidth=1, alpha=0.9)
-                ax.plot([hw_start_time, hw_start_time], [halfwidth_voltage-1, halfwidth_voltage+1], 'orange', linewidth=1)
-                ax.plot([hw_end_time, hw_end_time], [halfwidth_voltage-1, halfwidth_voltage+1], 'orange', linewidth=1)
-                ax.text((hw_start_time + hw_end_time)/2, halfwidth_voltage + 3, 'Halfwidth',
-                       fontsize=8, va='bottom', ha='center', color='orange', fontweight='bold')
+                # Fill between threshold and trace
+                ax.fill_between(
+                    zoomed_time[decay_start_zoom:decay_end_zoom],
+                    threshold_voltage,
+                    zoomed_trace[decay_start_zoom:decay_end_zoom],
+                    color='lightgreen', alpha=0.3, label='AHP Decay Area'
+                )
+            
+            # Add horizontal reference lines and annotations
+            # 1. Threshold line
+            ax.axhline(y=threshold_voltage, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+            thresh_label = 'AP Threshold' if not show_values else f'AP Threshold: {threshold_voltage:.1f} mV'
+            ax.text(zoomed_time[0] + 1, threshold_voltage + 1.5, thresh_label, 
+                    fontsize=8, va='bottom', ha='left', color='gray', fontweight='bold')
+            
+            # 2. Peak marker
+            ax.plot(zoomed_time[peak_idx_zoom], peak_voltage, 'ro', markersize=3)
+            ax.text(zoomed_time[peak_idx_zoom] + 1, peak_voltage, 'Peak', 
+                    fontsize=8, va='bottom', ha='left', color='red')
+            
+            # 3. AP Size (vertical line from threshold to peak)
+            mid_time = zoomed_time[peak_idx_zoom] - 2
+            ax.plot([mid_time, mid_time], [threshold_voltage, peak_voltage], 'blue', linewidth=1)
+            ax.plot([mid_time-0.5, mid_time+0.5], [threshold_voltage, threshold_voltage], 'blue', linewidth=1)
+            ax.plot([mid_time-0.5, mid_time+0.5], [peak_voltage, peak_voltage], 'blue', linewidth=1)
+            ap_size_label = 'AP Size' if not show_values else f'AP Size\n{ap_size:.1f} mV'
+            ax.text(mid_time - 1, (threshold_voltage + peak_voltage)/2, ap_size_label, 
+                    fontsize=7, va='center', ha='right', color='blue')
+            
+            # 4. AHP Amplitude (vertical line from threshold to trough)
+            if ahp_trough_idx_zoom < len(zoomed_time):
+                mid_time_ahp = zoomed_time[ahp_trough_idx_zoom] + 3
+                ax.plot([mid_time_ahp, mid_time_ahp], [ahp_trough_voltage, threshold_voltage], 
+                        'purple', linewidth=1)
+                ax.plot([mid_time_ahp-0.5, mid_time_ahp+0.5], [threshold_voltage, threshold_voltage], 'purple', linewidth=1)
+                ax.plot([mid_time_ahp-0.5, mid_time_ahp+0.5], [ahp_trough_voltage, ahp_trough_voltage], 'purple', linewidth=1)
+                ahp_amp_label = 'AHP Amp' if not show_values else f'AHP Amp\n{ahp_amplitude:.1f} mV'
+                ax.text(mid_time_ahp + 1, (threshold_voltage + ahp_trough_voltage)/2, 
+                        ahp_amp_label, 
+                        fontsize=7, va='center', ha='left', color='purple')
+            
+            # 5. AP Halfwidth (horizontal line at 50% of AP size)
+            halfwidth_voltage = threshold_voltage + (ap_size / 2)
+            # Find where trace crosses halfwidth voltage
+            rising_crossings = np.where(zoomed_trace[:peak_idx_zoom] >= halfwidth_voltage)[0]
+            if len(rising_crossings) > 0:
+                hw_start_idx = rising_crossings[0]
+                falling_crossings = np.where(zoomed_trace[peak_idx_zoom:] <= halfwidth_voltage)[0]
+                if len(falling_crossings) > 0:
+                    hw_end_idx = peak_idx_zoom + falling_crossings[0]
+                    hw_start_time = zoomed_time[hw_start_idx]
+                    hw_end_time = zoomed_time[hw_end_idx]
+                    
+                    # Draw horizontal line
+                    ax.plot([hw_start_time, hw_end_time], [halfwidth_voltage, halfwidth_voltage], 
+                           'orange', linewidth=1, alpha=0.9)
+                    ax.plot([hw_start_time, hw_start_time], [halfwidth_voltage-1, halfwidth_voltage+1], 'orange', linewidth=1)
+                    ax.plot([hw_end_time, hw_end_time], [halfwidth_voltage-1, halfwidth_voltage+1], 'orange', linewidth=1)
+                    ax.text((hw_start_time + hw_end_time)/2, halfwidth_voltage + 3, 'Halfwidth',
+                           fontsize=8, va='bottom', ha='center', color='orange', fontweight='bold')
 
         ax.set_xlabel('Time (ms)', fontsize=10)
         ax.set_ylabel('Voltage (mV)', fontsize=10)
@@ -2354,9 +2360,6 @@ def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='
                 ax.text(250, baseline_voltage+1.5, '$V_{baseline}$', fontsize=9, color='gray', fontweight='bold')
                 ax.text(500, min_voltage-2, '$V_{min}$', fontsize=9, color='blue', fontweight='bold')
                 ax.text(end_time_ms-100, steady_state_voltage+1.5, '$V_{steady}$', fontsize=9, color='green', fontweight='bold')
-                formula_text = 'Sag (%) = $\\frac{V_{steady} - V_{min}}{V_{baseline} - V_{min}}$ x 100'
-                ax.text(0.5, 0.05, formula_text, transform=ax.transAxes, fontsize=8, 
-                       ha='center', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
             
             label_color = 'black' if genotype == 'WT' else 'red'
             ax.text(0.02, 0.95, genotype, transform=ax.transAxes, fontsize=11, fontweight='bold', va='top', color=label_color)
@@ -2368,8 +2371,56 @@ def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='
             print(f"Error plotting voltage sag for {cell_id}: {e}")
             plot_trace_placeholder(ax, f"Error: {e}")
     
-    plot_single_voltage_sag(ax_wt, target_wt, 'WT', add_annotations=True)
+    plot_single_voltage_sag(ax_wt, target_wt, 'WT', add_annotations=False)
     plot_single_voltage_sag(ax_gnb1, target_gnb1, 'I80T/+', add_annotations=False)
+
+
+def plot_input_resistance_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='03142024_c2', target_gnb1='02132024_c1'):
+    """Plot WT and GNB1 input resistance examples side-by-side."""
+    import pandas as pd
+    import numpy as np
+    
+    def plot_single_input_resistance(ax, cell_id, genotype):
+        file_path = find_file_for_cell(data_dir, cell_id)
+        if not file_path:
+            plot_trace_placeholder(ax, f"File not found")
+            return
+        
+        try:
+            data_df = pd.read_pickle(file_path)
+            
+            trace = None
+            for stim_type in ['Voltage_sag', 'EPSP_stim', 'IV_stim', 'Coarse_FI', 'Fine_FI']:
+                sag_data = data_df[data_df['stim_type'] == stim_type]
+                if not sag_data.empty:
+                    trace = sag_data.iloc[0]['sweep']
+                    break
+                    
+            if trace is None:
+                plot_trace_placeholder(ax, "Missing Trace")
+                return
+            sampling_rate = 20000
+            dt_ms = 1000 / sampling_rate
+            time = np.arange(len(trace)) * dt_ms
+            
+            color = 'black' if genotype == 'WT' else 'red'
+            ax.plot(time, trace, color=color, linewidth=1.5)
+            
+            label_color = 'black' if genotype == 'WT' else 'red'
+            ax.text(0.02, 0.95, genotype, transform=ax.transAxes, fontsize=11, fontweight='bold', va='top', color=label_color)
+            
+            # Zoom in on test pulse
+            ax.set_xlim(0, 300)
+            ax.axis('off')
+            
+            if genotype in ('GNB1', 'I80T/+'):
+                add_scale_bar(ax, 50, 5, x_pos=0.8, y_pos=0.15)
+        except Exception as e:
+            plot_trace_placeholder(ax, f"Error: {e}")
+    
+    plot_single_input_resistance(ax_wt, target_wt, 'WT')
+    plot_single_input_resistance(ax_gnb1, target_gnb1, 'I80T/+')
+
 
 
 def plot_ahp_area_comparison(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, target_wt='03142024_c2', target_gnb1='02132024_c1'):
@@ -3255,6 +3306,9 @@ def plot_gabab_vm_change(ax, vm_csv_path, label, df_stats=None):
     if os.path.exists(vm_csv_path):
         df_vm = pd.read_csv(vm_csv_path)
         
+        # Rename GNB1 -> I80T/+ for display consistency
+        df_vm = rename_genotype(df_vm)
+        
         # Enforce negative values (Hyperpolarization = Drop from Zero)
         # If values are positive (magnitude), flip them.
         # If values are already negative, keep them.
@@ -3314,7 +3368,8 @@ def plot_baclofen_vm_traces(ax, vm_traces_path, label='H'):
     vm_change_df = pd.read_csv('paper_data/gabab_analysis/Baclofen_Vm_Change.csv')
     
     acq_freq = 20000
-    time_ms = np.arange(6000) / acq_freq * 1000  # 0-300ms
+    n_samples = 1000  # 50 ms at 20 kHz
+    time_ms = np.arange(n_samples) / acq_freq * 1000  # 0-50 ms
     
     # User requested specific WT cell
     wt_id = '20260206_c3'
@@ -3335,8 +3390,8 @@ def plot_baclofen_vm_traces(ax, vm_traces_path, label='H'):
     for i, (cell_id, delta, geno, y_shift) in enumerate([(wt_id, wt_delta, 'WT', 0), (gnb1_id, gnb1_delta, 'GNB1', -offset)]):
         if cell_id and cell_id in vm_data:
             cdata = vm_data[cell_id]
-            gab_trace = cdata['Gabazine'] + y_shift
-            bac_trace = cdata['Gabazine + Baclofen'].copy() + y_shift
+            gab_trace = cdata['Gabazine'][:n_samples] + y_shift
+            bac_trace = cdata['Gabazine + Baclofen'][:n_samples].copy() + y_shift
             
             # Reconstruction offset
             gab_mean_orig = np.mean(cdata['Gabazine'][:1000])
@@ -3374,17 +3429,17 @@ def plot_baclofen_vm_traces(ax, vm_traces_path, label='H'):
     if all_y:
         y_min_total = min(all_y)
         
-        # Position: Bottom Right
-        bar_x = 180
+        # Position: Bottom Right (within 50 ms window)
+        bar_x = 30
         bar_y = y_min_total - 5
         
-        # 100 ms Horizontal
-        ax.plot([bar_x, bar_x + 100], [bar_y, bar_y], 'k-', linewidth=1.5)
-        ax.text(bar_x + 50, bar_y - 1, '100 ms', ha='center', va='top', fontsize=6)
+        # 10 ms Horizontal
+        ax.plot([bar_x, bar_x + 10], [bar_y, bar_y], 'k-', linewidth=1.5)
+        ax.text(bar_x + 5, bar_y - 1, '10 ms', ha='center', va='top', fontsize=6)
         
         # 5 mV Vertical
-        ax.plot([bar_x + 100, bar_x + 100], [bar_y, bar_y + 5], 'k-', linewidth=1.5)
-        ax.text(bar_x + 105, bar_y + 2.5, '5 mV', ha='left', va='center', fontsize=6)
+        ax.plot([bar_x + 10, bar_x + 10], [bar_y, bar_y + 5], 'k-', linewidth=1.5)
+        ax.text(bar_x + 11, bar_y + 2.5, '5 mV', ha='left', va='center', fontsize=6)
         
         # Set limits
         if all_y:
