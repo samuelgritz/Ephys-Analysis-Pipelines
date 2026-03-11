@@ -4317,19 +4317,33 @@ def calculate_epsp_amplitude_in_window(trace, stim_onset_idx, analysis_window_sa
     
     return np.nan
 
-def extract_paired_pulse_data(data_dir, master_df, stim_config=None):
+def extract_paired_pulse_data(data_dir, master_df, stim_config=None, max_epsp_amplitude=15.0):
     """
-    Extract paired pulse traces from 'Test' experiments.
+    Extract paired pulse ratio (PPR) data from electrophysiology recordings.
+    
+    Strategy:
+      1. Identify PPR sweeps by scanning the raw sweep for stimulus artifacts
+         separated by ~50ms (uses find_peaks on the absolute derivative).
+      2. Once a sweep is identified as PPR, extract EPSP amplitudes for ALL channels
+         using the KNOWN stim_times from stim_config — not just the detected pair.
+         This ensures equal n-counts across channels.
+      3. Prefer offset_trace (artifact-removed) when available; fall back to raw sweep.
+      4. Filter out sweeps where any EPSP amplitude > max_epsp_amplitude (action potentials).
+      5. Only include cells that have valid PPR data for ALL channels.
     
     Parameters:
         data_dir: Path to directory containing .pkl files
         master_df: Filtered master dataframe
         stim_config: Dictionary with stimulus timing configuration. If None, uses defaults.
+        max_epsp_amplitude: Maximum EPSP amplitude (mV). Sweeps with larger values
+                           are excluded as likely action potentials. Default: 15.0 mV.
     
     Returns:
         Dictionary with structure: {cell_id: {'genotype': str, 'sex': str, 
                                               'channel_1': {...}, 'channel_2': {...}}}
     """
+    from scipy.signal import find_peaks
+    
     if stim_config is None:
         # Default configuration from YAML (EPSP_test_pulses)
         stim_config = {
@@ -4355,6 +4369,7 @@ def extract_paired_pulse_data(data_dir, master_df, stim_config=None):
     valid_ids = set(master_df_copy['Cell_ID'])
     
     PPR_data = {}
+    skipped_ap = 0  # counter for sweeps excluded due to action potentials
     
     # Iterate over files
     for filename in os.listdir(data_dir):
@@ -4369,72 +4384,134 @@ def extract_paired_pulse_data(data_dir, master_df, stim_config=None):
             filepath = os.path.join(data_dir, filename)
             df = pd.read_pickle(filepath)
             
-            # Filter for Test experiments
-            if 'experiment_description' not in df.columns:
+            # ---- Step 1: Identify PPR sweeps via artifact detection ----
+            ppr_sweeps = []
+            
+            for _, row in df.iterrows():
+                sweep = row.get('sweep')
+                if sweep is None or not isinstance(sweep, np.ndarray):
+                    continue
+                    
+                acq_freq = row.get('acquisition_frequency', 20000.0)
+                diff_sw = np.abs(np.diff(sweep))
+                peaks, _ = find_peaks(diff_sw, height=5.0, distance=int(acq_freq * 0.01))
+                
+                if len(peaks) == 0:
+                    continue
+                    
+                times_ms = peaks / acq_freq * 1000
+                valid_times = sorted([t for t in times_ms if t > 250])
+                
+                # Need at least 2 peaks to form a pair
+                if len(valid_times) < 2:
+                    continue
+                
+                # Check if any consecutive pair is ~50ms apart
+                diffs = np.diff(valid_times)
+                has_50 = any(abs(d - 50) < 5 for d in diffs)
+                is_theta = (any(abs(d - 10) < 5 for d in diffs) or 
+                           any(abs(d - 20) < 5 for d in diffs))
+                
+                if has_50 and not is_theta:
+                    ppr_sweeps.append(row)
+            
+            if len(ppr_sweeps) == 0:
+                continue
+                
+            acq_freq = ppr_sweeps[0].get('acquisition_frequency', 20000.0)
+            
+            # ---- Step 2: Extract EPSPs for ALL channels at KNOWN stim_times ----
+            channel_data = {}
+            for channel in stim_config:
+                channel_data[channel] = {'epsp1': [], 'epsp2': []}
+            
+            for row_data in ppr_sweeps:
+                sweep = row_data.get('sweep')
+                if sweep is None or not isinstance(sweep, np.ndarray):
+                    continue
+                
+                sweep_valid = True
+                sweep_results = {}
+                
+                for channel, config in stim_config.items():
+                    stim1_time = config['stim_times'][0]
+                    stim2_time = config['stim_times'][1]
+                    baseline_window_ms = config['baseline_window']
+                    analysis_window_ms = config['analysis_window']
+                    
+                    # ---- Try offset_trace first ----
+                    used_offset = False
+                    int_traces = row_data.get('intermediate_traces')
+                    if type(int_traces) is dict:
+                        offset = int_traces.get('offset_trace')
+                        if type(offset) is dict and channel in offset:
+                            ch_offset = offset[channel]
+                            isi_samples = int(50 * acq_freq / 1000)
+                            
+                            if isinstance(ch_offset, np.ndarray) and len(ch_offset) > isi_samples:
+                                epsp1 = np.max(ch_offset[:isi_samples])
+                                epsp2 = np.max(ch_offset[isi_samples:isi_samples*2])
+                                if epsp1 != 0:
+                                    sweep_results[channel] = (epsp1, epsp2)
+                                    used_offset = True
+                    
+                    # ---- Fallback: measure from raw sweep at KNOWN stim_times ----
+                    if not used_offset:
+                        stim1_idx = int(stim1_time * acq_freq / 1000)
+                        stim2_idx = int(stim2_time * acq_freq / 1000)
+                        baseline_samples = int(baseline_window_ms * acq_freq / 1000)
+                        analysis_samples = int(analysis_window_ms * acq_freq / 1000)
+                        
+                        baseline_start = max(0, stim1_idx - baseline_samples)
+                        baseline_end = stim1_idx
+                        
+                        epsp1 = calculate_epsp_amplitude_in_window(
+                            sweep, stim1_idx, analysis_samples,
+                            baseline_start, baseline_end
+                        )
+                        epsp2 = calculate_epsp_amplitude_in_window(
+                            sweep, stim2_idx, analysis_samples,
+                            baseline_start, baseline_end
+                        )
+                        
+                        if not np.isnan(epsp1) and not np.isnan(epsp2):
+                            sweep_results[channel] = (epsp1, epsp2)
+                    
+                    # ---- Amplitude filter: reject action potentials ----
+                    if channel in sweep_results:
+                        e1, e2 = sweep_results[channel]
+                        if abs(e1) > max_epsp_amplitude or abs(e2) > max_epsp_amplitude:
+                            sweep_valid = False
+                            skipped_ap += 1
+                            break
+                
+                # Only add data if ALL channels passed and have results
+                if sweep_valid and len(sweep_results) == len(stim_config):
+                    for channel in stim_config:
+                        e1, e2 = sweep_results[channel]
+                        channel_data[channel]['epsp1'].append(e1)
+                        channel_data[channel]['epsp2'].append(e2)
+            
+            # ---- Step 3: Compute averages and PPR ----
+            # Require ALL channels to have data
+            all_channels_valid = all(
+                len(channel_data[ch]['epsp1']) > 0 for ch in stim_config
+            )
+            
+            if not all_channels_valid:
                 continue
             
-            test_rows = df[df['experiment_description'].astype(str).str.lower() == 'test']
-            
-            if len(test_rows) == 0:
-                continue
-            
-            # Get acquisition frequency
-            acq_freq = test_rows.iloc[0].get('acquisition_frequency', 20000.0)
-            
-            # Initialize cell data
             PPR_data[cell_id] = {
                 'genotype': genotype_lookup.get(cell_id, 'Unknown'),
                 'sex': sex_lookup.get(cell_id, 'Unknown'),
             }
             
-            # Process each channel
             for channel, config in stim_config.items():
-                stim_times_ms = config['stim_times']
-                baseline_window_ms = config['baseline_window']
-                analysis_window_ms = config['analysis_window']
+                e1_vals = channel_data[channel]['epsp1']
+                e2_vals = channel_data[channel]['epsp2']
                 
-                # Convert to samples
-                stim1_idx = int(stim_times_ms[0] * acq_freq / 1000)
-                stim2_idx = int(stim_times_ms[1] * acq_freq / 1000)
-                baseline_samples = int(baseline_window_ms * acq_freq / 1000)
-                analysis_samples = int(analysis_window_ms * acq_freq / 1000)
-                
-                # Collect EPSPs from all test sweeps
-                epsp1_values = []
-                epsp2_values = []
-                
-                for _, row in test_rows.iterrows():
-                    sweep = row.get('sweep', None)
-                    if sweep is None or not isinstance(sweep, np.ndarray):
-                        continue
-                    
-                    # Calculate EPSP1
-                    baseline_start = stim1_idx - baseline_samples
-                    baseline_end = stim1_idx
-                    if baseline_start < 0:
-                        baseline_start = 0
-                    
-                    epsp1 = calculate_epsp_amplitude_in_window(
-                        sweep, stim1_idx, analysis_samples,
-                        baseline_start, baseline_end
-                    )
-                    
-                    # Calculate EPSP2
-                    epsp2 = calculate_epsp_amplitude_in_window(
-                        sweep, stim2_idx, analysis_samples,
-                        baseline_start, baseline_end  # Use same baseline as EPSP1
-                    )
-                    
-                    if not np.isnan(epsp1):
-                        epsp1_values.append(epsp1)
-                    if not np.isnan(epsp2):
-                        epsp2_values.append(epsp2)
-                
-                # Average across sweeps
-                avg_epsp1 = np.mean(epsp1_values) if epsp1_values else np.nan
-                avg_epsp2 = np.mean(epsp2_values) if epsp2_values else np.nan
-                
-                # Calculate PPR
+                avg_epsp1 = np.mean(e1_vals)
+                avg_epsp2 = np.mean(e2_vals)
                 ppr = avg_epsp2 / avg_epsp1 if (avg_epsp1 > 0 and not np.isnan(avg_epsp1)) else np.nan
                 
                 PPR_data[cell_id][channel] = {
@@ -4442,13 +4519,15 @@ def extract_paired_pulse_data(data_dir, master_df, stim_config=None):
                     'EPSP1_Amplitude': avg_epsp1,
                     'EPSP2_Amplitude': avg_epsp2,
                     'PPR': ppr,
-                    'n_sweeps': len(epsp1_values)
+                    'n_sweeps': len(e1_vals)
                 }
                 
         except Exception as e:
             print(f"Error processing {filename} for PPR: {e}")
             continue
     
+    if skipped_ap > 0:
+        print(f"  ⚠ Excluded {skipped_ap} sweeps with EPSP > {max_epsp_amplitude}mV (likely action potentials)")
     print(f"\nExtracted PPR data for {len(PPR_data)} cells")
     return PPR_data
 
@@ -4484,6 +4563,7 @@ def export_PPR_to_dataframe(PPR_data):
     df = pd.DataFrame(rows)
     return df
 
+
 def analyze_and_export_PPR(master_df, data_dir, output_path=None, stim_config=None):
     """
     Complete workflow: analyze paired pulse ratio and export results.
@@ -4511,6 +4591,9 @@ def analyze_and_export_PPR(master_df, data_dir, output_path=None, stim_config=No
     # Export to DataFrame
     print("\nExporting to DataFrame...")
     df = export_PPR_to_dataframe(PPR_data)
+
+    #plot the data and save to file
+    
     
     if df.empty:
         print("WARNING: No PPR data extracted")

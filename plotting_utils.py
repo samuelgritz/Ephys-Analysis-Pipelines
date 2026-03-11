@@ -4416,3 +4416,164 @@ def plot_traces_GIRK_v2(ax, traces_before, traces_after, genotype, drug_name,
     else:
         ax.text(0.5, 0.5, 'No traces', ha='center', axis='off')
         ax.axis('off')
+    
+
+def plot_PPR_by_genotype_and_channel(df, output_path):
+    """
+    Plot PPR data by genotype and channel using plot_bar_scatter style.
+    Creates one subplot per channel, each with WT vs I80T/+ bar+scatter.
+    
+    Parameters:
+        df: DataFrame with columns: Cell_ID, Genotype, Channel_Label, PPR
+        output_path: Path to save the plot (.png). Will also save .svg.
+    """
+    import scipy.stats as sci_stats
+    
+    print("\nPlotting PPR data...")
+    
+    plot_df = df.dropna(subset=['PPR']).copy()
+    plot_df = rename_genotype(plot_df, 'Genotype')
+    
+    if plot_df.empty:
+        print("⚠ No valid PPR data to plot.")
+        return
+        
+    channels = sorted(plot_df['Channel_Label'].unique())
+    genotype_order = ['WT', 'I80T/+']
+    
+    fig, axes = plt.subplots(1, len(channels), figsize=(3.5 * len(channels), 4))
+    if len(channels) == 1:
+        axes = [axes]
+    
+    for ax, ch_label in zip(axes, channels):
+        ch_df = plot_df[plot_df['Channel_Label'] == ch_label]
+        
+        max_h = plot_bar_scatter(ax, ch_df, x_col='Genotype', y_col='PPR', 
+                                  hue_col='Genotype', order=genotype_order,
+                                  unique_col='Cell_ID')
+        
+        ax.set_title(ch_label, fontsize=12, fontweight='bold')
+        ax.set_ylabel('Paired Pulse Ratio')
+        ax.set_xlabel('')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        # Stats: Mann-Whitney U
+        wt_vals = ch_df[ch_df['Genotype'] == 'WT']['PPR'].dropna()
+        gnb1_vals = ch_df[ch_df['Genotype'] == 'I80T/+']['PPR'].dropna()
+        
+        if len(wt_vals) > 2 and len(gnb1_vals) > 2:
+            stat, p_val = sci_stats.mannwhitneyu(wt_vals, gnb1_vals, alternative='two-sided')
+            sig = '****' if p_val < 0.0001 else '***' if p_val < 0.001 else '**' if p_val < 0.01 else '*' if p_val < 0.05 else 'ns'
+            
+            y_bar = max_h * 1.15
+            ax.plot([0, 0, 1, 1], [y_bar, y_bar * 1.02, y_bar * 1.02, y_bar], lw=1.2, c='k')
+            ax.text(0.5, y_bar * 1.03, sig, ha='center', va='bottom', fontsize=10, fontweight='bold')
+            ax.set_ylim(top=y_bar * 1.2)
+            print(f"  {ch_label} WT vs I80T/+: p={p_val:.4f} ({sig})")
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    with plt.rc_context({'svg.fonttype': 'none'}):
+        plt.savefig(output_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ PPR plot saved to: {output_path} (.png and .svg)")
+
+
+def plot_PPR_examples(data_dir, df, output_dir):
+    """
+    Plot 4 example PPR traces. Uses offset_trace (artifact-removed) when available,
+    otherwise falls back to raw sweep. Shows detected stim locations.
+    """
+    import os
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from scipy.signal import find_peaks
+    from analysis_utils import convert_filename_to_standard_id
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    plotted = 0
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    axes = axes.flatten()
+    
+    valid_ids = set(df['Cell_ID'].astype(str))
+    
+    for filename in sorted(os.listdir(data_dir)):
+        if not filename.endswith('.pkl'): continue
+        cell_id = convert_filename_to_standard_id(filename)
+        if cell_id is None or cell_id not in valid_ids: continue
+        
+        filepath = os.path.join(data_dir, filename)
+        file_df = pd.read_pickle(filepath)
+        
+        for _, row in file_df.iterrows():
+            sweep = row.get('sweep')
+            if sweep is None or not isinstance(sweep, np.ndarray): continue
+            
+            acq_freq = row.get('acquisition_frequency', 20000.0)
+            diff_sw = np.abs(np.diff(sweep))
+            peaks, _ = find_peaks(diff_sw, height=5.0, distance=int(acq_freq * 0.01))
+            
+            if len(peaks) == 0: continue
+            times_ms = peaks / acq_freq * 1000
+            valid_times = sorted([t for t in times_ms if t > 250])
+            if len(valid_times) not in [2, 4]: continue
+            
+            diffs_arr = np.diff(valid_times)
+            has_50 = any(abs(d - 50) < 5 for d in diffs_arr)
+            is_theta = (any(abs(d - 10) < 5 for d in diffs_arr) or 
+                       any(abs(d - 20) < 5 for d in diffs_arr))
+            if not has_50 or is_theta: continue
+            
+            ax = axes[plotted]
+            
+            # Try offset_trace first
+            int_traces = row.get('intermediate_traces')
+            used_offset = False
+            if type(int_traces) is dict:
+                offset = int_traces.get('offset_trace')
+                if type(offset) is dict:
+                    for ch, ch_data in offset.items():
+                        if isinstance(ch_data, np.ndarray) and len(ch_data) > 100:
+                            time_axis = np.arange(len(ch_data)) / acq_freq * 1000
+                            ax.plot(time_axis, ch_data, color='black', lw=1.0)
+                            ax.axvline(50, color='blue', ls='--', alpha=0.5, lw=0.8, label='50ms ISI')
+                            ax.set_title(f"{cell_id} | {ch} (offset_trace)", fontsize=9)
+                            ax.set_ylabel('Amplitude (mV)')
+                            ax.set_xlabel('Time from stim (ms)')
+                            used_offset = True
+                            break
+            
+            if not used_offset:
+                time_axis = np.arange(len(sweep)) / acq_freq * 1000
+                ax.plot(time_axis, sweep, color='black', lw=0.8)
+                for t in valid_times:
+                    ax.axvline(t, color='red', ls='--', alpha=0.5, lw=0.8)
+                ax.set_title(f"{cell_id} | raw sweep", fontsize=9)
+                ax.set_ylabel('Voltage (mV)')
+                ax.set_xlabel('Time (ms)')
+                ax.set_xlim(min(valid_times) - 50, max(valid_times) + 150)
+                start_i = int(max(0, (min(valid_times) - 50) * acq_freq / 1000))
+                end_i = int(min(len(sweep), (max(valid_times) + 150) * acq_freq / 1000))
+                y_min, y_max = np.min(sweep[start_i:end_i]), np.max(sweep[start_i:end_i])
+                ax.set_ylim(y_min - 2, y_max + 2)
+            
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            plotted += 1
+            break
+        
+        if plotted >= 4:
+            break
+            
+    if plotted > 0:
+        plt.tight_layout()
+        example_path = os.path.join(output_dir, 'PPR_AutoExtract_Examples.png')
+        plt.savefig(example_path, dpi=300)
+        plt.close()
+        print(f"✓ Plotted {plotted} example traces to {example_path}")
+    
