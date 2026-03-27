@@ -90,9 +90,25 @@ if __name__ == "__main__":
     print("\n" + "="*70)
     print("EXTRACTING & CATEGORIZING CONDITIONS")
     print("="*70)
+    # --- Plateau Area Threshold ---
+    # Traces are offset (not baseline-subtracted to RMP)
+    # Sweeps with max voltage below this threshold are excluded
+    default_threshold = 20  # mV
+    threshold_input = input(f"\nPlateau area threshold (mV, default={default_threshold}): ").strip()
+    if threshold_input:
+        try:
+            plateau_threshold_mv = float(threshold_input)
+        except ValueError:
+            print(f"  Invalid input, using default: {default_threshold} mV")
+            plateau_threshold_mv = default_threshold
+    else:
+        plateau_threshold_mv = default_threshold
+    print(f"  Using plateau threshold: {plateau_threshold_mv} mV")
 
     # This function does the heavy lifting: splits into groups (Gabazine, Before_ML297, etc.)
-    data_list, traces_dict = categorize_and_extract_plateau_data(plateau_traces, master_df)
+    data_list, traces_dict = categorize_and_extract_plateau_data(
+        plateau_traces, master_df, plateau_threshold_mv=plateau_threshold_mv
+    )
 
     # 4. EXPORT MASTER CSV (Stats & Codes)
     # --------------------------------------------------------------------------------------------------
@@ -132,6 +148,48 @@ if __name__ == "__main__":
     if not spike_rate_df.empty:
         print("\nPreview of Spike Rate Data:")
         print(spike_rate_df.head())
+
+    # 6.5 ANALYZE & EXPORT PLATEAU AREA PER THETA CYCLE
+    # --------------------------------------------------------------------------------------------------
+    print("\n" + "="*70)
+    print("ANALYZING PLATEAU AREA PER THETA CYCLE")
+    print("="*70)
+    
+    # Use traces_dict which contains categorized condition data (Gabazine, Before, After)
+    # The analysis will filter for baseline conditions automatically
+    plateau_area_results = analyze_plateau_area_per_theta_cycle(
+        master_df, categorized_traces=traces_dict, threshold_mv=plateau_threshold_mv
+    )
+    
+    if plateau_area_results:
+        p_area_df = pd.DataFrame(plateau_area_results)
+        p_area_csv_path = os.path.join(output_dir, 'Plateau_Area_Per_Cycle.csv')
+        
+        # Pivot to wide format (Cycles as columns)
+        p_area_wide = p_area_df.pivot_table(
+            index=['Cell_ID', 'Genotype', 'Sex', 'Pathway'],
+            columns='Cycle_Index',
+            values='Plateau_Area'
+        ).reset_index()
+        
+        # Rename columns: 1 -> Cycle_1_Area, etc.
+        p_area_wide.columns = [
+            f'Cycle_{c}_Area' if isinstance(c, (int, np.integer)) else c 
+            for c in p_area_wide.columns
+        ]
+        
+        p_area_wide.to_csv(p_area_csv_path, index=False)
+        print(f"✓ Exported Plateau Area data to: {p_area_csv_path}")
+        
+        # Calculate Mean and SEM per group for the user
+        print("\nMean Plateau Area per Cycle (Genotype x Pathway) [mV-s]:")
+        summary = p_area_df.groupby(['Genotype', 'Pathway', 'Cycle_Index'])['Plateau_Area'].agg(['mean', 'sem']).reset_index()
+        print(summary.head(10))
+        
+        # Save summary too
+        summary_csv_path = os.path.join(output_dir, 'Plateau_Area_Per_Cycle_Summary.csv')
+        summary.to_csv(summary_csv_path, index=False)
+        print(f"✓ Exported Summary to: {summary_csv_path}")
 
     # 7. GENERATE FIGURE 6 EXAMPLE TRACES (Pre-computed for fast figure generation)
     # --------------------------------------------------------------------------------------------------

@@ -896,6 +896,44 @@ def analyze_fi_midpoint(FI_plotting_format):
 
     return sigmoid_df
 
+def get_average_FI_per_current_amplitude(FI_df):
+    """
+    Calculate the average firing rate for each current amplitude, 
+    separated by genotype.
+    """
+
+    #columns=['Cell_ID', 'Current_Amplitude', 'Firing_Rate', 
+    #                                'Genotype', 'Sex', 'Holding Voltage', 'Slice Solution']
+
+    # get all unique current amplitudes, dropping NaN values
+    current_amps = [a for a in FI_df['Current_Amplitude'].unique() if not (isinstance(a, float) and np.isnan(a))]
+
+    firing_rates = {current_amp: {'WT': [], 'GNB1': []} for current_amp in current_amps}
+    for current_amp in current_amps:
+        for cell_id in FI_df['Cell_ID'].unique():
+            current_firing_rate = FI_df.loc[(FI_df['Cell_ID'] == cell_id) & (FI_df['Current_Amplitude'] == current_amp), 'Firing_Rate'].mean()
+            if not np.isnan(current_firing_rate):
+                genotype = str(FI_df.loc[(FI_df['Cell_ID'] == cell_id), 'Genotype'].iloc[0]).strip()
+                if genotype in firing_rates[current_amp]:
+                    firing_rates[current_amp][genotype].append(current_firing_rate)
+    
+    #get averages
+    avg_firing_rates = {current_amp: {'WT': np.nan, 'GNB1': np.nan} for current_amp in current_amps}
+    for current_amp in current_amps:
+        wt_vals   = firing_rates[current_amp]['WT']
+        gnb1_vals = firing_rates[current_amp]['GNB1']
+        avg_firing_rates[current_amp]['WT']   = np.mean(wt_vals)   if wt_vals   else np.nan
+        avg_firing_rates[current_amp]['GNB1'] = np.mean(gnb1_vals) if gnb1_vals else np.nan
+
+    print('avg firing rates: ', avg_firing_rates)
+    
+    #convert to dataframe
+    rows = [{'Current_Amplitude': amp, 'WT': vals['WT'], 'GNB1': vals['GNB1']}
+            for amp, vals in avg_firing_rates.items()]
+    firing_rates_df = pd.DataFrame(rows).sort_values('Current_Amplitude').reset_index(drop=True)
+    return firing_rates_df
+    
+
 def analyze_and_export_FI_and_ISI_data(master_df, data_dir, output_path=None):
     """
     Master workflow function.
@@ -915,6 +953,12 @@ def analyze_and_export_FI_and_ISI_data(master_df, data_dir, output_path=None):
     FI_df = process_and_merge_FI_data(FI_data, experiment_master_df=master_df)
     results['FI_long_format'] = FI_df
     FI_df.to_csv(f"{output_path}_long_format.csv", index=False)
+
+    print('>>> Stats per Current Amplitude')
+    avg_FI = get_average_FI_per_current_amplitude(FI_df)
+    results['avg_FI'] = avg_FI
+    avg_FI.to_csv(f"{output_path}_average_FI_per_current_amplitude.csv", index=False)
+
 
     print(">>> Creating Plotting Format...")
     plotting_df = format_FI_data_for_plotting(FI_df)
@@ -1980,26 +2024,45 @@ def process_basal_E_I_data(E_I_traces_basal, master_df, ISI_times_dict_mapping):
 
     return E_I_data_df, E_I_traces_remapped
 
-def create_expected_EPSP(unitary_EPSP, stim_times):
-    """Create expected compound EPSP from unitary EPSP and stimulation times."""
-    baseline_len = int(10 * 20000 / 1000)
+def create_expected_EPSP(unitary_EPSP, stim_times, total_len=None, sample_rate=20000):
+    """
+    Create expected compound EPSP by linearly summing a unitary EPSP at each stim time.
+    
+    1. Clip the unitary below zero (remove afterhyperpolarization undershoot)
+    2. Place a copy at each stim time (stim_index = stim_ms * sample_rate / 1000)
+    3. Return the compound trace
+    
+    Works for any stim pattern — just pass in the stim times in ms.
+    """
     unitary_len = len(unitary_EPSP)
-    total_len = int(800 * 20000 / 1000)
+    
+    if total_len is None:
+        total_len = int(800 * sample_rate / 1000)
+    
+    # Clip negative values from the unitary (no undershoot)
+    unitary_clipped = unitary_EPSP.copy()
+    unitary_clipped[unitary_clipped < 0] = 0
+    
     compound_EPSP = np.zeros(total_len)
-
+    
     for stim in stim_times:
-        stim_index = int(stim * 20000 / 1000)
-        start = baseline_len + stim_index
+        start = int(stim * sample_rate / 1000)
         end = start + unitary_len
         
-        if start < total_len:
+        if start < 0:
+            # Stim before trace start — clip beginning of unitary
+            clip = -start
+            if clip < unitary_len:
+                copy_len = min(unitary_len - clip, total_len)
+                compound_EPSP[:copy_len] += unitary_clipped[clip:clip + copy_len]
+        elif start < total_len:
             if end <= total_len:
-                compound_EPSP[start:end] += unitary_EPSP
+                compound_EPSP[start:end] += unitary_clipped
             else:
                 overlap_len = total_len - start
                 if overlap_len > 0:
-                    compound_EPSP[start:] += unitary_EPSP[:overlap_len]
-
+                    compound_EPSP[start:] += unitary_clipped[:overlap_len]
+    
     return compound_EPSP
 
 def calculate_peak_amplitude(trace, height_threshold=0.1):
@@ -2176,10 +2239,7 @@ def calculate_expected_EPSPs_for_all_cells(E_I_traces_dict, ISI_times_dict_mappi
                     else:
                         stim_times_flat = stim_times
                     
-                    # Convert absolute stim times to RELATIVE times from first stim
-                    # This is needed because the extracted traces are aligned to their
-                    # respective stim start, but YAML contains absolute recording times
-                    # (e.g., channel_1 starts at 500ms, channel_2 at 1500ms)
+                    # Stim times relative to first stim, starting at 0
                     if stim_times_flat and len(stim_times_flat) > 0:
                         first_stim = stim_times_flat[0]
                         stim_times_relative = [t - first_stim for t in stim_times_flat]
@@ -2770,6 +2830,11 @@ def load_plateau_traces_from_dir(data_dir, master_df=None):
                         trace = row['intermediate_traces'].get('offset_trace')
                     
                     if trace is not None:
+                        # Zero to 450-500ms baseline window
+                        # 20kHz: 450ms = 9000 idx, 500ms = 10000 idx
+                        if len(trace) > 10000:
+                            baseline = np.mean(trace[9000:10000])
+                            trace = trace - baseline
                         plateau_traces[std_id][desc][f"sweep_{i}"] = trace
         except Exception as e:
             continue
@@ -2779,10 +2844,13 @@ def load_plateau_traces_from_dir(data_dir, master_df=None):
 
 # PLATEAU AREA ANALYSIS FUNCTIONS
 
-def calculate_plateau_area_under_curve(trace, sampling_rate=20000):
+def calculate_plateau_area_under_curve(trace, sampling_rate=20000, threshold_mv=35):
     """
     Calculates Area Under Curve for Plateau Potentials.
     Adaptive: Uses available data if trace ends before 2200ms target.
+    Logic:
+        1. Detection: Raw peak must reach threshold_mv (default 20)
+        2. Area: Integration of voltage ABOVE the threshold_mv
     """
     start_ms = 500
     target_end_ms = 2200
@@ -2795,22 +2863,30 @@ def calculate_plateau_area_under_curve(trace, sampling_rate=20000):
     
     # Adaptive End Index
     actual_end_idx = min(len(trace), target_end_idx)
-    
-    if actual_end_idx < (target_end_idx - int(50 * sampling_rate / 1000)):
-        # Optional: Print warning for very short traces
-        pass
+    segment = trace[start_idx:actual_end_idx].copy()
 
-    segment = trace[start_idx:actual_end_idx]
-    segment[segment < 0] = 0 # Rectify negative values
-    
-    return np.trapz(segment, dx=1/sampling_rate)
+    # 1. Threshold Detection (RAW MAX - NO SMOOTHING)
+    if np.max(segment) < threshold_mv:
+        return np.nan
+    else:
+        # 2. Suprathreshold Area (Area above the threshold line)
+        # Shift trace down by threshold and rectify at zero
+        suprathreshold_trace = segment - threshold_mv
+        suprathreshold_trace[suprathreshold_trace < 0] = 0
+        
+        plateau_area = np.trapz(suprathreshold_trace, dx=1/sampling_rate)
+        return plateau_area
 
-def categorize_and_extract_plateau_data(plateau_traces, master_df):
+def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_threshold_mv=35):
     """
     Iterates through MasterDF and categorizes plateau experiments.
+    plateau_threshold_mv: Minimum peak height required for plateau detection (mV)
     """
     final_data_list = [] 
     final_traces_dict = {} 
+    
+    # Standard threshold is positive (e.g. 35) as offset_trace starts at 0
+    threshold_mv = plateau_threshold_mv
     
     groups = ['Gabazine_Only', 'Before_ML297', 'After_ML297', 'Before_ETX', 'After_ETX']
     for g in groups: final_traces_dict[g] = {}
@@ -2819,7 +2895,7 @@ def categorize_and_extract_plateau_data(plateau_traces, master_df):
          raise ValueError("Master DF missing 'Cell_ID' (yyyymmdd_c#)")
     master_df['Cell_ID'] = master_df['Cell_ID'].astype(str).str.strip()
 
-    print("\nCategorizing Plateau Experimental Conditions...")
+    print(f"\nCategorizing Plateau Experimental Conditions (threshold: {threshold_mv} mV)...")
 
     for idx, row in master_df.iterrows():
         cell_id = row['Cell_ID']
@@ -2833,24 +2909,24 @@ def categorize_and_extract_plateau_data(plateau_traces, master_df):
         # --- LOGIC TREE ---
         if 'ML297' in drugs_present and 'Gabazine' in drugs_present:
             for s in sweeps_map['Gabazine']:
-                _extract_single_plateau_condition(cell_id, row, s, 'Before_ML297', plateau_traces, final_data_list, final_traces_dict)
+                _extract_single_plateau_condition(cell_id, row, s, 'Before_ML297', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
             for s in sweeps_map['ML297']:
-                _extract_single_plateau_condition(cell_id, row, s, 'After_ML297', plateau_traces, final_data_list, final_traces_dict)
+                _extract_single_plateau_condition(cell_id, row, s, 'After_ML297', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
 
         elif 'ETX' in drugs_present and 'Gabazine' in drugs_present:
             for s in sweeps_map['Gabazine']:
-                _extract_single_plateau_condition(cell_id, row, s, 'Before_ETX', plateau_traces, final_data_list, final_traces_dict)
+                _extract_single_plateau_condition(cell_id, row, s, 'Before_ETX', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
             for s in sweeps_map['ETX']:
-                _extract_single_plateau_condition(cell_id, row, s, 'After_ETX', plateau_traces, final_data_list, final_traces_dict)
+                _extract_single_plateau_condition(cell_id, row, s, 'After_ETX', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
 
         elif 'Gabazine' in drugs_present and len(drugs_present) == 1:
              for s in sweeps_map['Gabazine']:
-                 _extract_single_plateau_condition(cell_id, row, s, 'Gabazine_Only', plateau_traces, final_data_list, final_traces_dict)
+                 _extract_single_plateau_condition(cell_id, row, s, 'Gabazine_Only', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
     
     return final_data_list, final_traces_dict
 
 def _extract_single_plateau_condition(cell_id, meta_row, ref_sweep_name, condition_label, 
-                                      all_traces, data_list, traces_dict):
+                                      all_traces, data_list, traces_dict, threshold_mv=35):
     """
     Extracts data for 'Both', 'Schaffer', and 'Perforant' pathways.
     Logic: Both = ref, Schaffer = ref-1, Perforant = ref-2.
@@ -2859,8 +2935,6 @@ def _extract_single_plateau_condition(cell_id, meta_row, ref_sweep_name, conditi
     data is only analyzed from 07/09/2024 onwards due to:
     'Correct Hardware fix from this date on for individual pathways'
     """
-    # Hardware fix cutoff date: 07/09/2024 -> Cell_ID format: 20240709
-    HARDWARE_FIX_CUTOFF = 20240709
     
     if cell_id not in all_traces: return
     experiments = all_traces[cell_id]
@@ -2900,7 +2974,7 @@ def _extract_single_plateau_condition(cell_id, meta_row, ref_sweep_name, conditi
         
         if target_sweep and target_sweep in sweeps:
             trace = sweeps[target_sweep]
-            area = calculate_plateau_area_under_curve(trace)
+            area = calculate_plateau_area_under_curve(trace, threshold_mv=threshold_mv)
             
             if np.isnan(area):
                 print(f"Warning: {cell_id} {pathway} ({target_sweep}) - Area calc failed (NaN).")
@@ -3031,6 +3105,31 @@ def find_matching_E_I_key(standard_id, ei_keys):
             if cell_suffix in k: return k
     return None
 
+def _remove_test_pulse(trace, sampling_rate=20000):
+    """
+    Remove the test pulse artifact (50-150ms) from a trace by linear interpolation.
+    The test pulse is a -50pA current injection for input resistance measurement.
+    It must be removed before any baseline or area calculations.
+    """
+    test_start_ms = 50.0
+    test_end_ms = 200.0
+    test_start_idx = int(test_start_ms * sampling_rate / 1000)
+    test_end_idx = int(test_end_ms * sampling_rate / 1000)
+    
+    cleaned = trace.copy()
+    if len(cleaned) <= test_end_idx:
+        return cleaned
+    
+    # Get values just before and after the test pulse for interpolation
+    val_before = cleaned[max(0, test_start_idx - 1)]
+    val_after = cleaned[min(len(cleaned) - 1, test_end_idx)]
+    
+    # Linear interpolation across the test pulse window
+    n_pts = test_end_idx - test_start_idx
+    cleaned[test_start_idx:test_end_idx] = np.linspace(val_before, val_after, n_pts)
+    
+    return cleaned
+
 def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocols, master_df, 
                                window_ms=100, sampling_rate=20000):
     results = []
@@ -3137,13 +3236,16 @@ def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocol
                         unitary = u_data.get('unitary_average_traces')
                 
                 if unitary is not None and len(unitary) >= 100 and not np.all(unitary == 0):
-                    # Compute expected trace
-                    expected_trace = create_expected_EPSP_theta(
-                        unitary, 
+                    # Strip the 10ms baseline — only use EPSP portion
+                    baseline_samples = int(10 * sampling_rate / 1000)  # 200 at 20kHz
+                    unitary_epsp_only = unitary[baseline_samples:]
+                    
+                    # Just pass stim times directly — function handles everything
+                    expected_trace = create_expected_EPSP(
+                        unitary_epsp_only, 
                         pathway_stim_times,
                         total_len=trace_len, 
-                        sample_rate=sampling_rate,
-                        zero_clip=True
+                        sample_rate=sampling_rate
                     )
                     saved_expected_traces[pathway_name] = expected_trace
 
@@ -3179,13 +3281,23 @@ def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocol
             window_ms = 200  # 200ms per cycle
             window_pts = int(window_ms / dt)
 
-            # Baseline correction
-            pre_stim_window = int(0.020 * sampling_rate)
-            if len(measured_trace) > pre_stim_window:
-                baseline_val = np.nanmean(measured_trace[:pre_stim_window])
+            # --- STEP 1: Remove test pulse (50-150ms) from measured trace ---
+            # The test pulse is a -50pA current injection for input resistance.
+            # It must be removed BEFORE baseline subtraction.
+            measured_trace_clean = _remove_test_pulse(measured_trace, sampling_rate)
+            
+            # --- STEP 2: Baseline correction ---
+            # Use 400-500ms window (100ms just before theta burst onset at 500ms)
+            # This is AFTER tetpulse recovery and BEFORE any synaptic stimulation
+            baseline_start_idx = int(400 * sampling_rate / 1000)  # 400ms = 8000 samples
+            baseline_end_idx = int(500 * sampling_rate / 1000)    # 500ms = 10000 samples
+            if len(measured_trace_clean) > baseline_end_idx:
+                baseline_val = np.nanmean(measured_trace_clean[baseline_start_idx:baseline_end_idx])
+            elif len(measured_trace_clean) > baseline_start_idx:
+                baseline_val = np.nanmean(measured_trace_clean[baseline_start_idx:])
             else:
                 baseline_val = 0
-            measured_trace_corrected = measured_trace - baseline_val
+            measured_trace_corrected = measured_trace_clean - baseline_val
 
             # Get the appropriate Expected Trace
             expected_trace = None
@@ -3224,10 +3336,15 @@ def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocol
             # Calculate difference
             difference_trace = measured_trace_corrected - expected_trace
 
+            # --- STEP 3: Crop traces for export ---
+            # Remove everything before 400ms (test pulse region + recovery)
+            # Keep 100ms of flat baseline before theta burst onset at 500ms
+            crop_idx = int(400 * sampling_rate / 1000)  # 8000 samples at 20kHz
+            
             trace_export[cell_key][pathway_name] = {
-                'Measured': measured_trace_corrected,
-                'Expected': expected_trace,
-                'Difference': difference_trace
+                'Measured': measured_trace_corrected[crop_idx:],
+                'Expected': expected_trace[crop_idx:],
+                'Difference': difference_trace[crop_idx:]
             }
             
             # Important: unitary variable is no longer needed for AUC loop logic below
@@ -3339,54 +3456,6 @@ def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocol
                 })
 
     return results, trace_export
-
-def create_expected_EPSP_theta(unitary_EPSP, stim_times, total_len=26000, sample_rate=20000, baseline_ms=10, zero_clip=True):
-    baseline_len = int(baseline_ms * sample_rate / 1000)
-    if unitary_EPSP is None or len(unitary_EPSP) <= baseline_len: return np.zeros(total_len)
-    unitary_len = len(unitary_EPSP) - baseline_len
-    expected_EPSP_theta = np.zeros(total_len)
-    
-    stims = stim_times if isinstance(stim_times, (list, np.ndarray)) else []
-    
-    # 1. Clean Unitary Template: Remove Stimulus Artifact (0-2ms)
-    # The artifact adds up linearly and ruins the expected trace peak.
-    unitary_clean = unitary_EPSP.copy()
-    artifact_pts = int(2.5 * sample_rate / 1000) # 2.5 ms
-    epsp_start_idx = baseline_len
-    
-    # Check boundaries
-    if epsp_start_idx + artifact_pts < len(unitary_clean):
-        # Linear interp from 0 to end of artifact
-        val_start = unitary_clean[epsp_start_idx] # Often this is where artifact starts (0)
-        # Actually, usually artifact starts AT baseline_len.
-        # We want to interpolate from baseline_len to baseline_len + artifact_pts
-        # Set to linear ramp or 0? 0 is safer if baseline is 0.
-        # Ideally, interp from 'val_pre' to 'val_post'.
-        val_pre = unitary_clean[epsp_start_idx - 1] if epsp_start_idx > 0 else 0
-        val_post = unitary_clean[epsp_start_idx + artifact_pts]
-        
-        interp_vals = np.linspace(val_pre, val_post, artifact_pts + 1)
-        unitary_clean[epsp_start_idx : epsp_start_idx + artifact_pts + 1] = interp_vals
-
-    for stim in stims:
-        stim_index = int(stim * sample_rate / 1000)
-        # Shift start to align 'epsp_start' with 'stim_index'
-        # The unitary_clean array has baseline before epsp_start.
-        # We want to add unitary_clean[epsp_start:] starting at stim_index.
-        
-        start_fill = stim_index
-        end_fill = min(total_len, start_fill + unitary_len)
-        len_fill = end_fill - start_fill
-        
-        if len_fill > 0:
-            expected_EPSP_theta[start_fill : end_fill] += unitary_clean[epsp_start_idx : epsp_start_idx + len_fill]
-
-    # Only zero-clip if requested (for Expected traces)
-    # Don't clip for Difference traces which need to show negative values
-    if zero_clip:
-        expected_EPSP_theta = zero_clip_and_interpolate(expected_EPSP_theta)
-
-    return expected_EPSP_theta
 
 def export_supralinearity_wide_format(results_list, output_path, value_column='Difference_Peak'):
     if not results_list: return pd.DataFrame()
@@ -3555,8 +3624,10 @@ def analyze_spike_rate_per_theta_cycle(data_dir, master_df, sampling_rate=20000,
                         for cycle in range(1, 6):
                             cycle_start_ms = 500 + (cycle - 1) * 200
                             cycle_end_ms = cycle_start_ms + 200
+                            
                             spikes_in_cycle = np.sum((peak_times_ms >= cycle_start_ms) & (peak_times_ms < cycle_end_ms))
-                            cycle_rates_per_sweep[cycle].append(spikes_in_cycle / 0.2)
+                            spike_rate_hz = spikes_in_cycle / 0.2
+                            cycle_rates_per_sweep[cycle].append(spike_rate_hz)
                     
                     for cycle in range(1, 6):
                         if cycle_rates_per_sweep[cycle]:
@@ -3564,16 +3635,108 @@ def analyze_spike_rate_per_theta_cycle(data_dir, master_df, sampling_rate=20000,
                             spike_rates_per_cycle[pathway][genotype][cycle].append(avg_rate)
                             
                             results_list.append({
-                                'Cell_ID': cell_id,
-                                'Genotype': genotype,
-                                'Sex': sex,
-                                'Pathway': pathway,
-                                'Cycle_Index': cycle,
-                                'Spike_Rate_Hz': avg_rate
+                                'Cell_ID': cell_id, 'Genotype': genotype, 'Sex': sex,
+                                'Pathway': pathway, 'Cycle_Index': cycle, 'Spike_Rate_Hz': avg_rate
                             })
                             
             except Exception as e:
-                continue
+                print(f"Error processing {filename}: {e}")
+                
+    return results_list, spike_rates_per_cycle
+
+def analyze_plateau_area_per_theta_cycle(master_df, categorized_traces, sampling_rate=20000, threshold_mv=20):
+    """
+    Analyze Plateau Area (AUC) per theta cycle for Theta_Burst stimulation.
+    Uses ONLY baseline conditions: Gabazine_Only, Before_ML297, Before_ETX.
+    Area is returned in mV-seconds (consistent with Plateau_Area in paper).
+    Windows are aligned to exact burst start times.
+    threshold_mv: mV threshold for plateau detection (integrates ONLY area ABOVE this value)
+    """
+    results_list = []
+    
+    # Standard Theta Protocol timing (New Protocol)
+    # 5 bursts: 500, 649.7, 799.4, 949.1, 1098.8
+    # We use 200ms windows for consistency with spike rate/supralinearity analysis
+    burst_starts = [500.0, 649.7, 799.4, 949.1, 1098.8]
+    window_ms = 200
+    
+    # Metadata lookups
+    genotype_lookup = dict(zip(master_df['Cell_ID'].astype(str), master_df['Genotype']))
+    sex_lookup = dict(zip(master_df['Cell_ID'].astype(str), master_df['Sex']))
+    baseline_groups = ['Gabazine_Only', 'Before_ML297', 'Before_ETX']
+    
+    print(f"  Analyzing plateau area per theta cycle (mV-s) for groups: {baseline_groups}")
+    
+    # Store areas for averaging: cell_cycle_data[cell_id][pathway][cycle] = [list of areas]
+    cell_cycle_data = {}
+
+    for group_name in baseline_groups:
+        if group_name not in categorized_traces: continue
+        
+        for cell_id, pathways_dict in categorized_traces[group_name].items():
+            genotype = genotype_lookup.get(cell_id)
+            if genotype is None: continue
+            
+            if cell_id not in cell_cycle_data: cell_cycle_data[cell_id] = {}
+            
+            for pathway, trace in pathways_dict.items():
+                final_pathway = None
+                if 'Both' in pathway: final_pathway = 'Both Pathways'
+                elif 'Perforant' in pathway: final_pathway = 'Perforant'
+                elif 'Schaffer' in pathway: final_pathway = 'Schaffer'
+                if final_pathway is None: continue
+                
+                if final_pathway not in cell_cycle_data[cell_id]:
+                    cell_cycle_data[cell_id][final_pathway] = {1:[], 2:[], 3:[], 4:[], 5:[]}
+                
+                if trace is None or len(trace) == 0: continue
+                
+                # Perform local baseline correction for robustness (first 20ms)
+                pre_stim_pts = int(20 * sampling_rate / 1000)
+                if len(trace) > pre_stim_pts:
+                    baseline_val = np.nanmean(trace[:pre_stim_pts])
+                else:
+                    baseline_val = 0
+                trace_corrected = trace - baseline_val
+                
+                for cycle_idx, start_ms in enumerate(burst_starts):
+                    end_ms = start_ms + window_ms
+                    
+                    start_idx = int(start_ms * sampling_rate / 1000)
+                    end_idx = int(end_ms * sampling_rate / 1000)
+                    
+                    if len(trace_corrected) > start_idx:
+                        actual_end = min(len(trace_corrected), end_idx)
+                        segment = trace_corrected[start_idx:actual_end].copy()
+                        
+                        # 1. Suprathreshold Area (Area above the threshold line)
+                        # Shift trace down by threshold and rectify at zero (detection is implicit here)
+                        suprathreshold_trace = segment - threshold_mv
+                        suprathreshold_trace[suprathreshold_trace < 0] = 0
+                        
+                        # Note: In cycle analysis, we integrate even if peak < threshold (it will just be 0 area)
+                        # No smoothed peak check per USER request
+                        area_mv_s = np.trapz(suprathreshold_trace, dx=1/sampling_rate)
+                        cell_cycle_data[cell_id][final_pathway][cycle_idx + 1].append(area_mv_s)
+    
+    for cell_id, pathways in cell_cycle_data.items():
+        genotype = genotype_lookup.get(cell_id)
+        sex = sex_lookup.get(cell_id, 'Unknown')
+        
+        for pathway, cycles in pathways.items():
+            for cycle in range(1, 6):
+                if cycles[cycle]:
+                    avg_area = np.mean(cycles[cycle])
+                    results_list.append({
+                        'Cell_ID': cell_id,
+                        'Genotype': genotype,
+                        'Sex': sex,
+                        'Pathway': pathway,
+                        'Cycle_Index': cycle,
+                        'Plateau_Area': avg_area
+                    })
+    
+    return results_list
     
     n_cells = len(set([r['Cell_ID'] for r in results_list])) if results_list else 0
     print(f"  Spike rates per cycle analyzed for {n_cells} cells")

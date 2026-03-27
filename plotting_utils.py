@@ -1125,11 +1125,14 @@ def select_and_plot_example(ax, genotype, isi, label):
     
     """Select a representative example and plot both pathways"""
     # Filter for this condition
-    condition = df_traces[(df_traces['Genotype'] == genotype) & 
+    # Robustly match genotype even if already renamed in df
+    genotype_targets = [genotype, 'GNB1', 'I80T/+']
+    condition = df_traces[(df_traces['Genotype'].isin(genotype_targets)) & 
                         (df_traces['ISI'] == isi)]
     
     if len(condition) == 0:
-        ax.text(0.5, 0.5, f'No data for {genotype} {isi}ms ISI', 
+        geno_label = GENOTYPE_DISPLAY.get(genotype, genotype)
+        ax.text(0.5, 0.5, f'No data for {geno_label} {isi}ms ISI', 
             ha='center', va='center', transform=ax.transAxes)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -1370,7 +1373,9 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
     For basal pathway, uses Pathway column = 'Basal_Stratum_Oriens'.
     """
     # Filter for this condition
-    condition = df_traces[(df_traces['Genotype'] == genotype) & 
+    # Robustly match genotype even if already renamed in df
+    genotype_targets = [genotype, 'GNB1', 'I80T/+']
+    condition = df_traces[(df_traces['Genotype'].isin(genotype_targets)) & 
                          (df_traces['ISI'] == isi)].copy()
     
     # EXCLUDE Basal data if not plotting Basal
@@ -1380,7 +1385,8 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
             condition = condition[condition['Pathway'] != 'Basal_Stratum_Oriens']
     
     if len(condition) == 0:
-        ax.text(0.5, 0.5, f'No data for {genotype} {isi}ms ISI', 
+        geno_label = GENOTYPE_DISPLAY.get(genotype, genotype)
+        ax.text(0.5, 0.5, f'No data for {geno_label} {isi}ms ISI', 
                ha='center', va='center', transform=ax.transAxes)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -1479,7 +1485,7 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
             x_max = max(x_max, time_schaffer[-1])
         
         # Expected traces need time offset to align with measured traces (they have less pre-stim baseline)
-        expected_time_offset = -10  # 50ms offset to align stimulus timing
+        expected_time_offset = 0  # No offset needed: create_expected_EPSP aligns EPSP onset to stim_index
         
         if schaffer_expected is not None:
             time_schaffer = (np.arange(len(schaffer_expected)) / 20) + expected_time_offset
@@ -1490,7 +1496,7 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
     # If plotting 'both', offset on x-axis; if only perforant, start at 0
     if pathway in ['perforant', 'both']:
         perforant_offset = x_offset if pathway == 'both' else 0
-        expected_time_offset = -10  # Same offset for perforant expected traces
+        expected_time_offset = 0  # No offset needed
         
         if perforant_control is not None:
             time_perforant = np.arange(len(perforant_control)) / 20 + perforant_offset
@@ -1514,7 +1520,7 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
     
     # Plot Basal (Stratum Oriens) pathway traces
     if pathway == 'basal':
-        expected_time_offset = -10
+        expected_time_offset = 0  # No offset needed
         
         if basal_control is not None:
             time_basal = np.arange(len(basal_control)) / 20
@@ -2710,9 +2716,9 @@ def plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name):
             ax.text(i, y_pos, '*', ha='center', va='bottom',
                    fontsize=10, fontweight='bold', color='black')
     
-    # Add hashtag with brackets if interaction (Genotype:ISI_Time) is significant
-    interaction_p = markers['interaction_p']
-    if pd.notna(interaction_p) and interaction_p < 0.05:
+    # Add hashtag with brackets if Genotype main effect is significant
+    main_marker = markers.get('main_effect', '')
+    if main_marker == '#':
         bracket_y = y_max + y_max * 0.18
         
         # Draw horizontal line
@@ -2823,9 +2829,9 @@ def plot_metric_comparison(ax, df_amplitudes, pathway_name, column, ylabel, add_
                 ax.text(i, y_pos, '*', ha='center', va='bottom',
                        fontsize=10, fontweight='bold', color='black')
         
-        # Add interaction hashtag with brackets
-        interaction_p = markers['interaction_p']
-        if pd.notna(interaction_p) and interaction_p < 0.05:
+        # Add Genotype hashtag with brackets
+        main_marker = markers.get('main_effect', '')
+        if main_marker == '#':
             bracket_y = overall_max + abs(overall_max) * 0.25 if overall_max != 0 else 1.0
             
             # Draw horizontal line
@@ -3677,9 +3683,12 @@ def plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats=None):
         
         # Add stats annotation
         if df_stats is not None:
-            # Map pathway names to match stats file
-            pathway_stats_name = pathway.replace('Perforant', 'ECIII').replace('Schaffer', 'CA3')
-            match = df_stats[df_stats['Comparison'].str.contains(pathway_stats_name, na=False)]
+            # Map pathway names to match stats file (already matches: Perforant, Schaffer, Both)
+            pathway_stats_name = pathway
+            match = df_stats[
+                (df_stats['Comparison'].str.contains(pathway_stats_name, na=False)) & 
+                (df_stats['Figure_Panel'] == 'Fig 6C')
+            ]
             
             if not match.empty:
                 # Use raw p-value (no FDR - independent hypotheses)
@@ -3716,14 +3725,18 @@ def plot_example_difference_traces(fig, gs, supralin_traces, master_df, start_id
         start_idx, end_idx: indices for time window
     """
     # Find a WT cell with Both pathway data
-    wt_example_cell = None
-    
-    for cell_id, cell_data in supralin_traces.items():
-        cell_row = master_df[master_df['Cell_ID'] == cell_id]
-        if not cell_row.empty and cell_row.iloc[0]['Genotype'] == 'WT':
-            if 'Both Pathways' in cell_data:
-                wt_example_cell = cell_id
-                break
+    # Use specific WT cell ID if requested
+    target_id = '20250325_c2'
+    if target_id in supralin_traces:
+        wt_example_cell = target_id
+    else:
+        # Fallback search if target is missing
+        for cell_id, cell_data in supralin_traces.items():
+            cell_row = master_df[master_df['Cell_ID'] == cell_id]
+            if not cell_row.empty and cell_row.iloc[0]['Genotype'] == 'WT':
+                if 'Both Pathways' in cell_data:
+                    wt_example_cell = cell_id
+                    break
     
     if wt_example_cell and 'Both Pathways' in supralin_traces[wt_example_cell]:
         cell_data = supralin_traces[wt_example_cell]['Both Pathways']
@@ -3758,8 +3771,8 @@ def plot_example_difference_traces(fig, gs, supralin_traces, master_df, start_id
             peak_val = supralin[peak_idx]
             peak_time = time[peak_idx]
             ax_d2.annotate('Supralinear', xy=(peak_time, peak_val),
-                          xytext=(peak_time + 100, peak_val + 5),
-                          fontsize=7, ha='left',
+                          xytext=(15, 5), textcoords='offset points',
+                          fontsize=7, ha='left', va='bottom',
                           arrowprops=dict(arrowstyle='->', color='blue', lw=0.8))
         ax_d2.axis('off')
         add_scale_bar(ax_d2, 200, 10, x_pos=0.7, y_pos=0.1)
@@ -4147,10 +4160,15 @@ def prepare_figure_6_data(df_auc_total=None):
     # 1. Configuration
     # -------------------------------------------------------------------------
     acq_freq = 20000
-    start_ms = 400  # Modified: Include 100ms baseline (Stim starts at 500)
+    # Supralinear traces are pre-cropped to start at 400ms
+    # So start_idx=0 (beginning of cropped trace), end_idx = (1500-400)*20 = 22000
+    start_ms = 400  # For Panel A (raw traces, NOT pre-cropped)
     end_ms = 1500
-    start_idx = int(start_ms * acq_freq / 1000)
-    end_idx = int(end_ms * acq_freq / 1000)
+    start_idx = 0  # Traces already start at 400ms
+    end_idx = int((end_ms - start_ms) * acq_freq / 1000)  # 22000 samples
+    # Keep original indices for Panel A raw traces (which are NOT pre-cropped)
+    raw_start_idx = int(start_ms * acq_freq / 1000)  # 8000
+    raw_end_idx = int(end_ms * acq_freq / 1000)  # 30000
     
     # 2. Load Data for Panel A (Raw Traces)
     # -------------------------------------------------------------------------

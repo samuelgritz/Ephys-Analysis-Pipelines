@@ -392,8 +392,12 @@ def run_stats_figure_6():
     def record_stat(fig_panel, comparison_name, res, n_wt=None, n_gnb1=None):
         print_stat_result(fig_panel, comparison_name, res)
         row = {
-            'Figure_Panel': fig_panel,
             'Comparison': comparison_name,
+            'Mean_WT': res['Mean_WT'],
+            'Mean_GNB1': res['Mean_GNB1'],
+            'SEM_WT': res['SEM_WT'],
+            'SEM_GNB1': res['SEM_GNB1'],
+            'Figure_Panel': fig_panel,
             'Test_Used': res['Test'],
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
@@ -428,8 +432,14 @@ def run_stats_figure_6():
         ]
         wt = plateau_both[plateau_both['Genotype'] == 'WT']['Plateau_Area']
         gnb1 = plateau_both[plateau_both['Genotype'] == 'GNB1']['Plateau_Area']
+        mean_wt = wt.mean()
+        mean_gnb1 = gnb1.mean()
+        sem_wt = wt.sem()
+        sem_gnb1 = gnb1.sem()
+
         print(f"  Both Pathway - WT: n={len(wt)}, GNB1: n={len(gnb1)}")
         res = compare_two_groups(wt, gnb1)
+        res.update({'Mean_WT': mean_wt, 'Mean_GNB1': mean_gnb1, 'SEM_WT': sem_wt, 'SEM_GNB1': sem_gnb1})
         record_stat("Fig 6C", "Plateau Area (Both): WT vs GNB1", res, n_wt=len(wt), n_gnb1=len(gnb1))
         
         # Schaffer Pathway
@@ -442,6 +452,7 @@ def run_stats_figure_6():
         print(f"  Schaffer Pathway - WT: n={len(wt)}, GNB1: n={len(gnb1)}")
         if len(wt) > 0 and len(gnb1) > 0:
             res = compare_two_groups(wt, gnb1)
+            res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'SEM_WT': wt.sem(), 'SEM_GNB1': gnb1.sem()})
             record_stat("Fig 6C", "Plateau Area (Schaffer): WT vs GNB1", res, n_wt=len(wt), n_gnb1=len(gnb1))
         
         # Perforant Pathway
@@ -454,6 +465,7 @@ def run_stats_figure_6():
         print(f"  Perforant Pathway - WT: n={len(wt)}, GNB1: n={len(gnb1)}")
         if len(wt) > 0 and len(gnb1) > 0:
             res = compare_two_groups(wt, gnb1)
+            res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'SEM_WT': wt.sem(), 'SEM_GNB1': gnb1.sem()})
             record_stat("Fig 6C", "Plateau Area (Perforant): WT vs GNB1", res, n_wt=len(wt), n_gnb1=len(gnb1))
 
     # ===========================================================================
@@ -491,6 +503,7 @@ def run_stats_figure_6():
             print(f"  {display_label}: WT n={len(wt)}, GNB1 n={len(gnb1)}")
             if len(wt) > 0 and len(gnb1) > 0:
                 res = compare_two_groups(wt, gnb1)
+                res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'SEM_WT': wt.sem(), 'SEM_GNB1': gnb1.sem()})
                 record_stat("Fig 6F", f"Supralinear Total AUC ({display_label}): WT vs GNB1", res, n_wt=len(wt), n_gnb1=len(gnb1))
 
     # ===========================================================================
@@ -574,6 +587,7 @@ def run_stats_figure_6():
                     
                     if len(wt) > 0 and len(gnb1) > 0:
                         res = compare_two_groups(wt, gnb1)
+                        res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'SEM_WT': wt.sem(), 'SEM_GNB1': gnb1.sem()})
                         record_stat("Fig 6G", f"Cycle {cycle_num} ({pathway_label}): WT vs GNB1", res)
             else:
                  # Record a non-significant result effectively for the whole group?
@@ -612,11 +626,15 @@ def run_stats_figure_5():
     
     all_stats_export = []
     
-    def record_stat(fig_panel, comparison_name, res):
+    def record_stat_fig5(fig_panel, comparison_name, res):
         print_stat_result(fig_panel, comparison_name, res)
         all_stats_export.append({
-            'Figure_Panel': fig_panel,
             'Comparison': comparison_name,
+            'Mean_WT': res['Mean_WT'],
+            'Mean_GNB1': res['Mean_GNB1'],
+            'SEM_WT': res['SEM_WT'],
+            'SEM_GNB1': res['SEM_GNB1'],
+            'Figure_Panel': fig_panel,
             'Test_Used': res['Test'],
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
@@ -654,10 +672,16 @@ def run_stats_figure_5():
         
         wt = pathway_data[pathway_data['Genotype'] == 'WT'][metric_col].dropna()
         gnb1 = pathway_data[pathway_data['Genotype'] == 'GNB1'][metric_col].dropna()
-        
+
+        wt_mean = wt.mean()
+        wt_sem = wt.sem()
+        gnb1_mean = gnb1.mean()
+        gnb1_sem = gnb1.sem()
+                
         if len(wt) > 0 and len(gnb1) > 0:
             res = compare_two_groups(wt, gnb1)
-            record_stat(panel, comparison, res)
+            res.update({'Mean_WT': wt_mean, 'Mean_GNB1': gnb1_mean, 'SEM_WT': wt_sem, 'SEM_GNB1': gnb1_sem})
+            record_stat_fig5(panel, comparison, res)
         else:
             print(f"[{panel}] {comparison}: Insufficient data")
         
@@ -673,10 +697,16 @@ def run_stats_figure_5():
         
         wt_vm = vm_change_df[vm_change_df['Genotype'] == 'WT']['Voltage Change'].dropna()
         gnb1_vm = vm_change_df[vm_change_df['Genotype'] == 'GNB1']['Voltage Change'].dropna()
+
+        wt_mean = wt_vm.mean()
+        wt_sem = wt_vm.sem()
+        gnb1_mean = gnb1_vm.mean()
+        gnb1_sem = gnb1_vm.sem()
         
         if len(wt_vm) > 0 and len(gnb1_vm) > 0:
             res = compare_two_groups(wt_vm, gnb1_vm)
-            record_stat(panel, comparison, res)
+            res.update({'Mean_WT': wt_mean, 'Mean_GNB1': gnb1_mean, 'SEM_WT': wt_sem, 'SEM_GNB1': gnb1_sem})
+            record_stat_fig5(panel, comparison, res)
         else:
             print(f"[{panel}] {comparison}: Insufficient data")
         

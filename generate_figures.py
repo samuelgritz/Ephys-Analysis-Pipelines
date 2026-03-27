@@ -1061,9 +1061,9 @@ def plot_figure_4_EI():
             add_subplot_label(ax, "B", fontsize=8, fontweight='bold')
         
         if pathway == 'basal':
-            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
+            plot_ei_averages(ax, df_traces, 'I80T/+', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
         else:
-            plot_ei_averages(ax, df_traces, 'GNB1', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
+            plot_ei_averages(ax, df_traces, 'I80T/+', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
     
     # Add custom legend CENTERED below row 2
     from matplotlib.lines import Line2D
@@ -1196,17 +1196,22 @@ def plot_figure_6_dendritic():
     plateau_df = rename_genotype(plateau_df)
     df_auc_total = rename_genotype(df_auc_total)
     
-    # Re-define config variables for plotting calls (matching helper)
+    # Re-define config variables for plotting calls
     acq_freq = 20000
     start_ms = 400
     end_ms = 1500
-    start_idx = int(start_ms * acq_freq / 1000)
-    end_idx = int(end_ms * acq_freq / 1000)
+    # Panel A: Raw traces are NOT pre-cropped, need absolute indices
+    raw_start_idx = int(start_ms * acq_freq / 1000)   # 8000
+    raw_end_idx = int(end_ms * acq_freq / 1000)        # 30000
+    # Panel B: processed_stats already sliced in prepare_figure_6_data (pre-cropped traces)
+    # plot_theta_averaged_traces only uses (end_idx - start_idx) for time axis length
+    panel_b_start = 0
+    panel_b_end = int((end_ms - start_ms) * acq_freq / 1000)  # 22000
 
     # 4. Create Figure
     # -------------------------------------------------------------------------
     fig = plt.figure(figsize=(6.89, 11))
-    gs = fig.add_gridspec(8, 3, hspace=0.6, wspace=0.3)
+    gs = fig.add_gridspec(8, 3, hspace=0.8, wspace=0.3)
     
     cols = ['Perforant', 'Schaffer', 'Both']
     col_titles = ['ECIII (Perforant)', 'CA3 (Schaffer)', 'Both Pathways']
@@ -1214,11 +1219,11 @@ def plot_figure_6_dendritic():
     # 5. Plot Panels Using Modular Functions
     # -------------------------------------------------------------------------
     
-    # Panel A: Raw Traces
-    plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq, start_idx, end_idx)
+    # Panel A: Raw Traces (NOT pre-cropped)
+    plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq, raw_start_idx, raw_end_idx)
     
-    # Panel B: Averaged + Expected Traces
-    plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq, start_idx, end_idx)
+    # Panel B: Averaged + Expected Traces (pre-sliced in prepare_figure_6_data)
+    plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq, panel_b_start, panel_b_end)
 
     # Panel C: Plateau Area Bar Plots
     # Panel C: Plateau Area Bar Plots
@@ -1234,8 +1239,10 @@ def plot_figure_6_dendritic():
         ax_c.axis('off')
 
     # Panel D: Single WT Example
-    start_idx_d = int(400 * acq_freq / 1000)
-    end_idx_d = int(1500 * acq_freq / 1000)
+    # Traces are pre-cropped to start at 400ms, so start_idx=0
+    # end_idx = (1500ms - 400ms) * 20 samples/ms = 22000
+    start_idx_d = 0
+    end_idx_d = int((1500 - 400) * acq_freq / 1000)
     
     # supralin_traces is already loaded via prepare_figure_6_data
     
