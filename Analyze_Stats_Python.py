@@ -430,8 +430,8 @@ def run_stats_figure_6():
             (df_plateau['Condition'].isin(valid_conditions)) & 
             (df_plateau['Pathway'] == 'Both')
         ]
-        wt = plateau_both[plateau_both['Genotype'] == 'WT']['Plateau_Area']
-        gnb1 = plateau_both[plateau_both['Genotype'] == 'GNB1']['Plateau_Area']
+        wt = plateau_both[plateau_both['Genotype'] == 'WT']['Plateau_Area'].dropna()
+        gnb1 = plateau_both[plateau_both['Genotype'] == 'GNB1']['Plateau_Area'].dropna()
         mean_wt = wt.mean()
         mean_gnb1 = gnb1.mean()
         sem_wt = wt.sem()
@@ -447,8 +447,9 @@ def run_stats_figure_6():
             (df_plateau['Condition'].isin(valid_conditions)) & 
             (df_plateau['Pathway'] == 'Schaffer')
         ]
-        wt = plateau_sch[plateau_sch['Genotype'] == 'WT']['Plateau_Area']
-        gnb1 = plateau_sch[plateau_sch['Genotype'] == 'GNB1']['Plateau_Area']
+        wt = plateau_sch[plateau_sch['Genotype'] == 'WT']['Plateau_Area'].dropna()
+        gnb1 = plateau_sch[plateau_sch['Genotype'] == 'GNB1']['Plateau_Area'].dropna()
+
         print(f"  Schaffer Pathway - WT: n={len(wt)}, GNB1: n={len(gnb1)}")
         if len(wt) > 0 and len(gnb1) > 0:
             res = compare_two_groups(wt, gnb1)
@@ -460,8 +461,9 @@ def run_stats_figure_6():
             (df_plateau['Condition'].isin(valid_conditions)) & 
             (df_plateau['Pathway'] == 'Perforant')
         ]
-        wt = plateau_perf[plateau_perf['Genotype'] == 'WT']['Plateau_Area']
-        gnb1 = plateau_perf[plateau_perf['Genotype'] == 'GNB1']['Plateau_Area']
+        wt = plateau_perf[plateau_perf['Genotype'] == 'WT']['Plateau_Area'].dropna()
+        gnb1 = plateau_perf[plateau_perf['Genotype'] == 'GNB1']['Plateau_Area'].dropna()
+
         print(f"  Perforant Pathway - WT: n={len(wt)}, GNB1: n={len(gnb1)}")
         if len(wt) > 0 and len(gnb1) > 0:
             res = compare_two_groups(wt, gnb1)
@@ -489,7 +491,7 @@ def run_stats_figure_6():
             panel_c_cells = df_plateau[
                 (df_plateau['Condition'].isin(valid_conditions)) & 
                 (df_plateau['Pathway'] == plat_name)
-            ]['Cell_ID'].unique()
+            ].dropna(subset=['Plateau_Area'])['Cell_ID'].unique()
             
             # Filter supralinearity to ONLY cells present in Panel C
             pathway_data = df_supralin[
@@ -497,8 +499,8 @@ def run_stats_figure_6():
                 (df_supralin['Cell_ID'].isin(panel_c_cells))
             ]
             
-            wt = pathway_data[pathway_data['Genotype'] == 'WT']['Total_AUC']
-            gnb1 = pathway_data[pathway_data['Genotype'] == 'GNB1']['Total_AUC']
+            wt = pathway_data[pathway_data['Genotype'] == 'WT']['Total_AUC'].dropna()
+            gnb1 = pathway_data[pathway_data['Genotype'] == 'GNB1']['Total_AUC'].dropna()
             
             print(f"  {display_label}: WT n={len(wt)}, GNB1 n={len(gnb1)}")
             if len(wt) > 0 and len(gnb1) > 0:
@@ -754,9 +756,11 @@ def run_stats_supplemental_figure_3():
         wt_abs_cols = ['WT GNB1 Absolute Protein Signal Rep 1', 'WT GNB1 Absolute Protein Signal Rep 2', 'WT GNB1 Absolute Protein Signal Rep 3']
         i80t_abs_cols = ['I80T/+ GNB1 Absolute Protein Signal Rep 1', 'I80T/+ GNB1 Absolute Protein Signal Rep 2', 'I80T/+ GNB1 Absolute Protein Signal Rep 3']
         
-        # Extract Absolute values (flatten to 1D array)
+        # Extract Absolute values (flatten to 1D array and remove NaNs)
         wt_abs = df_protein[wt_abs_cols].values.flatten()
+        wt_abs = wt_abs[~np.isnan(wt_abs)]
         i80t_abs = df_protein[i80t_abs_cols].values.flatten()
+        i80t_abs = i80t_abs[~np.isnan(i80t_abs)]
         
         # Calculate Relative (Normalized to WT Mean)
         wt_mean = np.mean(wt_abs)

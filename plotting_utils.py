@@ -3693,6 +3693,7 @@ def plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats=None):
             if not match.empty:
                 # Use raw p-value (no FDR - independent hypotheses)
                 p_val = match.iloc[0]['P_Value']
+                print(f"DEBUG Fig 6C: Pathway={pathway}, Matched={match.iloc[0]['Comparison']}, P={p_val}, Significance={match.iloc[0]['Significance']}")
                 y_max = pathway_data['Plateau_Area'].max()
                 y_pos = y_max * 1.1
                 
@@ -4116,6 +4117,7 @@ def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None):
             if not match.empty:
                 # Use raw p-value (no FDR - independent hypotheses)
                 p_val = match.iloc[0]['P_Value']
+                print(f"DEBUG Fig 6F: Pathway={pathway}, Matched={match.iloc[0]['Comparison']}, P={p_val}, Significance={match.iloc[0]['Significance']}")
                 
                 # Calculate y_pos based on actual plot limits (handles negative values)
                 y_max_plot = y_lim_top  # Use the ylim_top calculated globally
@@ -4263,7 +4265,7 @@ def prepare_figure_6_data(df_auc_total=None):
         
         # Apply SAME filtering as Analyze_Stats_Python.py Panel C
         valid_conditions = ['Gabazine_Only', 'Before_ML297', 'Before_ETX']
-        plateau_filtered = plateau_df[plateau_df['Condition'].isin(valid_conditions)].copy()
+        plateau_filtered = plateau_df[plateau_df['Condition'].isin(valid_conditions)].dropna(subset=['Plateau_Area']).copy()
         
         # Build set of (Cell_ID, Pathway) from Panel C per pathway
         # 'Single Pathway Plateau Inclusion' already handled during export for Schaffer/Perforant
