@@ -48,6 +48,19 @@ if __name__ == "__main__":
             print("❌ File not found. Try again.")
 
     master_df = pd.read_csv(master_df_path, low_memory=False)
+    
+    # --- 1.5 Filter Master DF for E-I Analysis ---
+    # Only include cells marked 'Yes' in 'Inclusion' 
+    # AND having specific patterns in 'Experiment Notes'
+    inclusion_mask = master_df['Inclusion'].astype(str).str.contains('Yes', case=False, na=False)
+    
+    # Patterns specified by user for Figures 4, 5, 6 AND Supplemental
+    # 'E/I up' will catch both '... Gabazine' and '... Control' variants
+    notes_patterns = ['E/I up', 'Full E/I', '300 ms unitary Gabazine']
+    notes_mask = master_df['Experiment Notes'].str.contains('|'.join(notes_patterns), case=False, na=False)
+    
+    master_df = master_df[inclusion_mask & notes_mask].copy()
+    print(f"✓ Filtered Master DF: {len(master_df)} cells meet E-I inclusion criteria (Inclusion='Yes' and Experiment Notes contains: {', '.join(notes_patterns)})")
 
     # --- 2. Get Data Directory (Box Compatible) ---
     # Hardcoded path to avoid interactive prompts
@@ -111,7 +124,8 @@ if __name__ == "__main__":
         output_path_amplitudes='paper_data/E_I_data/E_I_amplitudes.csv',
         output_path_traces='paper_data/E_I_data/E_I_traces_for_plotting.pkl',
         export_R_formats=True,
-        base_output_path_R='paper_data/E_I_data/E_I'
+        base_output_path_R='paper_data/E_I_data/E_I',
+        interactive=False
     )
     
     # --- 6. Merge Basal Pathway (Stratum Oriens) Data ---
@@ -217,16 +231,14 @@ if __name__ == "__main__":
         
         # Regenerate R format files with merged data (so stats include all 3 pathways)
         print("\nRegenerating R format files with merged data...")
-        from analysis_utils import export_EPSP_amplitudes_with_drug_for_R
+        from analysis_utils import export_E_I_data_with_R_format_options
         
         # Reload the updated amplitudes with basal data
         combined_df = pd.read_csv('paper_data/E_I_data/E_I_amplitudes.csv')
         
-        # Create R format for EPSP amplitudes (includes all 3 pathways)
-        R_epsp_df = export_EPSP_amplitudes_with_drug_for_R(combined_df)
-        if R_epsp_df is not None and len(R_epsp_df) > 0:
-            R_epsp_df.to_csv('paper_data/E_I_data/E_I_EPSP_amplitudes_R_format.csv', index=False)
-            print(f"✓ Regenerated R EPSP format with {len(R_epsp_df)} rows (all 3 pathways)")
+        # Create R formats (includes all 3 pathways)
+        from analysis_utils import export_E_I_data_with_R_format_options
+        export_E_I_data_with_R_format_options(combined_df, base_output_path='paper_data/E_I_data/E_I', interactive=False)
         
         print(f"\n✓ Basal pathway integrated into main E:I data")
     else:

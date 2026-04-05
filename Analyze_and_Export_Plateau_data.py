@@ -93,16 +93,7 @@ if __name__ == "__main__":
     # --- Plateau Area Threshold ---
     # Traces are offset (not baseline-subtracted to RMP)
     # Sweeps with max voltage below this threshold are excluded
-    default_threshold = 20  # mV
-    threshold_input = input(f"\nPlateau area threshold (mV, default={default_threshold}): ").strip()
-    if threshold_input:
-        try:
-            plateau_threshold_mv = float(threshold_input)
-        except ValueError:
-            print(f"  Invalid input, using default: {default_threshold} mV")
-            plateau_threshold_mv = default_threshold
-    else:
-        plateau_threshold_mv = default_threshold
+    plateau_threshold_mv = 20  # mV
     print(f"  Using plateau threshold: {plateau_threshold_mv} mV")
 
     # This function does the heavy lifting: splits into groups (Gabazine, Before_ML297, etc.)
@@ -237,23 +228,29 @@ if __name__ == "__main__":
                     val_pre = row_pre.iloc[0]['Plateau_Area']
                     val_post = row_post.iloc[0]['Plateau_Area']
                     
+                    # Handle NaN in plateau area (means it fell below threshold) 
+                    # If it was above threshold before but below after, delta should reflect full suppression
+                    v_pre = val_pre if not np.isnan(val_pre) else 0.0
+                    v_post = val_post if not np.isnan(val_post) else 0.0
+                    
                     # Calculate Delta (After - Before)
-                    delta = val_post - val_pre
+                    delta = v_post - v_pre
                     
                     # Get metadata from pre row
                     geno = row_pre.iloc[0]['Genotype']
                     sex = row_pre.iloc[0]['Sex'] if 'Sex' in row_pre.columns else 'Unknown'
                     
-                    delta_rows.append({
-                        'Cell_ID': cell_id,
-                        'Genotype': geno,
-                        'Sex': sex,
-                        'Pathway': pathway,
-                        'Drug': drug_name,
-                        'Delta_Area': delta,
-                        'Pre_Area': val_pre,
-                        'Post_Area': val_post
-                    })
+                    if v_pre > 0:
+                        delta_rows.append({
+                            'Cell_ID': cell_id,
+                            'Genotype': geno,
+                            'Sex': sex,
+                            'Pathway': pathway,
+                            'Drug': drug_name,
+                            'Delta_Area': delta,
+                            'Pre_Area': v_pre,
+                            'Post_Area': v_post
+                        })
         
         df_delta_path = os.path.join(output_dir, 'Plateau_Delta_GIRK.csv')
         # Check if df_delta is empty

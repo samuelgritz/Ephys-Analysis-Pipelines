@@ -1052,7 +1052,6 @@ def get_intrinsic_properties_by_cell(data_dir, cell_properties_to_plot, master_d
         print('Error in extracting intrinsic properties:', str(e))
         return None
 
-
 def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
                                     vm_rest_threshold=-40,
                                     pulse_amp_pA=-50,
@@ -1498,10 +1497,22 @@ def get_E_I_traces(data_dir, unitary_stim_starts_dict, ISI_times_dict_mapping, m
             def check_is_basal(channel_key, pathway_str):
                 return f"{channel_key}: stratum oriens" in str(pathway_str).lower()
 
+            def check_is_empty(channel_key, pathway_str):
+                stim_str = str(pathway_str).lower().strip().replace(' ', '')
+                if 'channel_2:}' in stim_str and channel_key == 'channel_2':
+                    return True
+                if 'channel_1:,channel_2' in stim_str and channel_key == 'channel_1':
+                    return True
+                return False
+
             for channel in channels:
                 # EXCLUSION LOGIC: 
                 # Priority 1: Trust master_df 'Stimulation Pathways'
                 # Priority 2: Trust data file label if master_df is ambiguous
+                
+                # If master_df explicitly says this channel is empty, skip it immediately
+                if check_is_empty(channel, pathway_info):
+                    continue
                 
                 is_basal_in_master = check_is_basal(channel, pathway_info)
                 
@@ -2001,7 +2012,11 @@ def process_basal_E_I_data(E_I_traces_basal, master_df, ISI_times_dict_mapping):
     
     # 4. Calculate Amplitudes and Estimated Inhibition
     # This modifies E_I_traces_remapped in-place to add inhibition traces
-    E_I_amplitudes, _ = get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces_remapped)
+    E_I_amplitudes, _ = get_E_I_amplitudes_and_estimated_inhibition_traces(
+        E_I_traces_remapped, 
+        ISI_times_dict_mapping=patched_mapping, 
+        master_df=master_df
+    )
     
     # 5. Calculate Imbalance
     E_I_imbalances = calculate_E_I_imbalance(E_I_amplitudes)
@@ -2074,12 +2089,35 @@ def calculate_peak_amplitude(trace, height_threshold=0.1):
         return max_peak, max_peak_index
     return np.nan, np.nan
 
-def get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces_dict):
+def calculate_GABAB_area(trace, stim_times=None, sampling_rate=20000):
+    """
+    Calculate GABAB area (integral below zero) from the trace.
+    Returns a negative value (integral of negative component).
+    Units: mV * s
+    """
+    if not isinstance(trace, np.ndarray):
+        trace = np.array(trace)
+    
+    negative_trace = np.where(trace < 0, trace, 0)
+    dt = 1 / sampling_rate
+    area = np.trapz(negative_trace, dx=dt) # No minus sign, keeping it negative
+    return area
+
+def get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces_dict, ISI_times_dict_mapping=None, master_df=None):
     """Calculate peak amplitudes and estimated inhibition traces."""
     E_I_data_amplitudes = {}
     
+    # Pre-calculate stim times version for each cell if possible
+    cell_version_map = {}
+    if master_df is not None and 'Cell_ID' in master_df.columns and 'ESPS Stim Time File Name' in master_df.columns:
+        for _, row in master_df.iterrows():
+            cid = str(row['Cell_ID'])
+            fname = str(row['ESPS Stim Time File Name']).lower()
+            cell_version_map[cid] = 'older' if 'older' in fname else 'newer'
+
     for cell_id in E_I_traces_dict:
         E_I_data_amplitudes[cell_id] = {}
+        version = cell_version_map.get(cell_id, 'newer') # fallback to newer
 
         for ISI in E_I_traces_dict[cell_id]:
             E_I_data_amplitudes[cell_id][ISI] = {}
@@ -2087,6 +2125,27 @@ def get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces_dict):
             for channel in E_I_traces_dict[cell_id][ISI]:
                 E_I_data_amplitudes[cell_id][ISI][channel] = {}
 
+                # Get stim times for GABAB window calculation
+                stim_times = None
+                if ISI_times_dict_mapping and version in ISI_times_dict_mapping:
+                    if channel in ISI_times_dict_mapping[version]:
+                        if ISI in ISI_times_dict_mapping[version][channel]:
+                            full_stim_times = ISI_times_dict_mapping[version][channel][ISI]
+                            if isinstance(full_stim_times, list) and len(full_stim_times) > 0 and isinstance(full_stim_times[0], list):
+                                full_stim_times = full_stim_times[0] # take first sweep representation
+                                
+                            # If ISI=300, we are using snippets that start at EACH stimulus, 
+                            # so relative to trace start, stim is at 0.
+                            if ISI == 300:
+                                stim_times = [0.0]
+                            else:
+                                # Non-unitary traces start at the first stimulus of the train
+                                # or rather, the partitioned trace starts at the first stim time
+                                # In current extraction, non-unitary traces are partitioned at first_stim.
+                                # So last stim relative to trace start is pulse_count * ISI.
+                                first_stim = full_stim_times[0]
+                                stim_times = [s - first_stim for s in full_stim_times]
+                
                 # Calculate amplitudes for each condition
                 for condition in E_I_traces_dict[cell_id][ISI][channel]:
                     trace_key = 'unitary_average_traces' if ISI == 300 else 'non_unitary_average_traces'
@@ -2101,10 +2160,20 @@ def get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces_dict):
                         
                         if isinstance(trace, np.ndarray) and trace.size > 0:
                             max_peak, max_peak_idx = calculate_peak_amplitude(trace.copy())
+                            
+                            # GABAB area: integral of negative component of the GABAZINE average trace
+                            # (No inhibition condition)
+                            normalized_cond = condition.strip().lower()
+                            if normalized_cond == 'gabazine':
+                                # Matching the user's request for negative values in the bar plots
+                                gabab_area = calculate_GABAB_area(trace)
+                            else:
+                                gabab_area = 0.0
+                            
                             E_I_data_amplitudes[cell_id][ISI][channel][condition] = {
                                 'max_peak_value': max_peak,
-                                'max_peak_idx': max_peak_idx
-                            }
+                                'max_peak_idx': max_peak_idx,
+                                'gabab_area': gabab_area}
                 
                 # Calculate estimated inhibition
                 if 'Control' in E_I_traces_dict[cell_id][ISI][channel] and 'Gabazine' in E_I_traces_dict[cell_id][ISI][channel]:
@@ -2134,7 +2203,10 @@ def get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces_dict):
                             inhibition_trace = gab_trace - ctrl_trace
                             E_I_traces_dict[cell_id][ISI][channel]['estimated_inhibition'][trace_key] = inhibition_trace
                             
-                            max_peak, max_peak_idx = calculate_peak_amplitude(inhibition_trace.copy())
+                            max_peak_raw, max_peak_idx = calculate_peak_amplitude(inhibition_trace.copy())
+                            # Inhibition should be negative in the summary plots
+                            max_peak = -max_peak_raw if not np.isnan(max_peak_raw) else np.nan
+                            
                             E_I_data_amplitudes[cell_id][ISI][channel]['estimated_inhibition'] = {
                                 'max_peak_value': max_peak,
                                 'max_peak_idx': max_peak_idx
@@ -2159,8 +2231,10 @@ def calculate_E_I_imbalance(E_I_amplitudes_dict):
                 inhibition_peak = E_I_amplitudes_dict[cell_id][ISI][channel].get('estimated_inhibition', {}).get('max_peak_value')
 
                 if gabazine_peak is not None and inhibition_peak is not None:
-                    if (gabazine_peak + inhibition_peak) != 0:
-                        E_I_imbalance = gabazine_peak / (gabazine_peak + inhibition_peak)
+                    # Imbalance should be calculated from absolute magnitudes
+                    abs_inhibition = abs(inhibition_peak)
+                    if (gabazine_peak + abs_inhibition) != 0:
+                        E_I_imbalance = gabazine_peak / (gabazine_peak + abs_inhibition)
                     else:
                         print(f'Warning: E_I_imbalance is zero for cell: {cell_id}, ISI: {ISI}, channel: {channel}')
                         E_I_imbalance = 0
@@ -2283,17 +2357,28 @@ def export_E_I_amplitudes_to_dataframe(E_I_amplitudes_dict, E_I_imbalances_dict,
                 return 'Schaffer'
             return 'Unknown'
         
-        # Parse the string format: {channel_1: perforant, channel_2: schaffer}
-        stim_str = str(stim_pathways_str).lower()
+        # Ensure stim_str is clean
+        stim_str = str(stim_pathways_str).lower().strip()
         
-        # Extract the pathway for the given channel
+        # Explicit checks
+        if stim_str == '{channel_1: perforant, channel_2: schaffer}':
+            if channel == 'channel_1': return 'Perforant'
+            if channel == 'channel_2': return 'Schaffer'
+            
+        elif stim_str == '{channel_1: stratum oriens, channel_2: }' or stim_str == '{channel_1: stratum oriens, channel_2:}':
+            if channel == 'channel_1': return 'Basal_Stratum_Oriens'
+            if channel == 'channel_2': return None
+            
+        elif stim_str == '{channel_1: perforant, channel_2: }' or stim_str == '{channel_1: perforant, channel_2:}':
+            if channel == 'channel_1': return 'Perforant'
+            if channel == 'channel_2': return None
+
+        # Parse the string format generically if not exact match:
         if channel == 'channel_1':
             if 'channel_1:' in stim_str:
-                # Get text after 'channel_1:' until comma or closing brace
                 start = stim_str.find('channel_1:') + len('channel_1:')
                 end = stim_str.find(',', start)
-                if end == -1:
-                    end = stim_str.find('}', start)
+                if end == -1: end = stim_str.find('}', start)
                 pathway_raw = stim_str[start:end].strip()
             else:
                 pathway_raw = 'perforant'  # fallback
@@ -2301,8 +2386,7 @@ def export_E_I_amplitudes_to_dataframe(E_I_amplitudes_dict, E_I_imbalances_dict,
             if 'channel_2:' in stim_str:
                 start = stim_str.find('channel_2:') + len('channel_2:')
                 end = stim_str.find(',', start)
-                if end == -1:
-                    end = stim_str.find('}', start)
+                if end == -1: end = stim_str.find('}', start)
                 pathway_raw = stim_str[start:end].strip()
             else:
                 pathway_raw = 'schaffer'  # fallback
@@ -2347,12 +2431,15 @@ def export_E_I_amplitudes_to_dataframe(E_I_amplitudes_dict, E_I_imbalances_dict,
                 }
                 
                 # Add amplitudes for each condition
-                # Normalize condition names to prevent duplicates (e.g., "Control" vs "control")
                 for condition in E_I_amplitudes_dict[cell_id][ISI][channel]:
-                    max_peak = E_I_amplitudes_dict[cell_id][ISI][channel][condition].get('max_peak_value', np.nan)
+                    params = E_I_amplitudes_dict[cell_id][ISI][channel][condition]
+                    max_peak = params.get('max_peak_value', np.nan)
                     # Normalize condition name: title case and strip whitespace
                     normalized_condition = condition.strip().title() if condition.strip() else 'Unknown'
                     row[f'{normalized_condition}_Amplitude'] = max_peak
+                    
+                    if 'gabab_area' in params and normalized_condition == 'Gabazine':
+                        row['GABAB_Area'] = params['gabab_area']
                 
                 # Add E-I imbalance
                 if cell_id in E_I_imbalances_dict and ISI in E_I_imbalances_dict[cell_id]:
@@ -2567,57 +2654,152 @@ def export_E_I_imbalance_for_R(amplitudes_df):
     
     return pivot_df[other_cols + isi_cols]
 
-def export_E_I_data_with_R_format_options(amplitudes_df, base_output_path='paper_data/E_I'):
-    """Export E-I data in R-friendly formats with user prompts."""
+def export_GABAB_area_for_R(amplitudes_df):
+    """Export GABAB Area in R format."""
+    if 'GABAB_Area' not in amplitudes_df.columns:
+        return pd.DataFrame()
+    
+    # Filter for rows with GABAB Area
+    df = amplitudes_df.dropna(subset=['GABAB_Area']).copy()
+    
+    # Rename Cell_ID to Subject
+    df = df.rename(columns={'Cell_ID': 'Subject'})
+    
+    # Map pathway names to numbers
+    pathway_map = {'Perforant': 1, 'Schaffer': 2, 'Stratum_Oriens': 3, 'Basal_Stratum_Oriens': 3,
+                   'channel_1': 1, 'channel_2': 2, 'channel_3': 3}
+    df['Pathway'] = df['Pathway'].replace(pathway_map)
+    
+    # Ensure numeric
+    if df['Pathway'].dtype == 'object':
+        df['Pathway'] = df['Pathway'].str.extract(r'(\d+)')[0]
+        df['Pathway'] = pd.to_numeric(df['Pathway'], errors='coerce')
+        df = df.dropna(subset=['Pathway'])
+        df['Pathway'] = df['Pathway'].astype(int)
+    
+    df['ISI'] = df['ISI'].astype(str).apply(lambda x: f'ISI{x}')
+    
+    pivot_df = df.pivot_table(
+        index=['Subject', 'Pathway', 'Genotype'],
+        columns='ISI',
+        values='GABAB_Area',
+        aggfunc='mean'
+    ).reset_index()
+    
+    pivot_df.columns.name = None
+    
+    other_cols = [col for col in pivot_df.columns if not col.startswith('ISI')]
+    isi_cols = sorted(
+        [col for col in pivot_df.columns if col.startswith('ISI')],
+        key=lambda x: int(x.replace('ISI', ''))
+    )
+    
+    return pivot_df[other_cols + isi_cols]
+
+def export_GABAA_inhibition_for_R(amplitudes_df):
+    """Export Estimated Inhibition Amplitudes in R format."""
+    if 'Estimated_Inhibition_Amplitude' not in amplitudes_df.columns:
+        return pd.DataFrame()
+    
+    # Filter for rows with inhibition
+    df = amplitudes_df.dropna(subset=['Estimated_Inhibition_Amplitude']).copy()
+    
+    # Rename Cell_ID to Subject
+    df = df.rename(columns={'Cell_ID': 'Subject'})
+    
+    # Map pathway names to numbers
+    pathway_map = {'Perforant': 1, 'Schaffer': 2, 'Stratum_Oriens': 3, 'Basal_Stratum_Oriens': 3,
+                   'channel_1': 1, 'channel_2': 2, 'channel_3': 3}
+    df['Pathway'] = df['Pathway'].replace(pathway_map)
+    
+    # Ensure numeric
+    if df['Pathway'].dtype == 'object':
+        df['Pathway'] = df['Pathway'].str.extract(r'(\d+)')[0]
+        df['Pathway'] = pd.to_numeric(df['Pathway'], errors='coerce')
+        df = df.dropna(subset=['Pathway'])
+        df['Pathway'] = df['Pathway'].astype(int)
+    
+    df['ISI'] = df['ISI'].astype(str).apply(lambda x: f'ISI{x}')
+    
+    pivot_df = df.pivot_table(
+        index=['Subject', 'Pathway', 'Genotype'],
+        columns='ISI',
+        values='Estimated_Inhibition_Amplitude',
+        aggfunc='mean'
+    ).reset_index()
+    
+    pivot_df.columns.name = None
+    
+    other_cols = [col for col in pivot_df.columns if not col.startswith('ISI')]
+    isi_cols = sorted(
+        [col for col in pivot_df.columns if col.startswith('ISI')],
+        key=lambda x: int(x.replace('ISI', ''))
+    )
+    
+    return pivot_df[other_cols + isi_cols]
+
+def export_E_I_data_with_R_format_options(amplitudes_df, base_output_path='paper_data/E_I', interactive=True):
+    """Export E-I data in R-friendly formats."""
     results = {}
     
-    print("\n" + "="*70)
-    print("R FORMAT EXPORT OPTIONS")
-    print("="*70)
-    
-    export_epsp = input("\nExport EPSP amplitudes (Control & Gabazine) in R format? (y/n): ").strip().lower()
+    if interactive:
+        print("\n" + "="*70)
+        print("R FORMAT EXPORT OPTIONS")
+        print("="*70)
+        
+        export_epsp = input("\nExport EPSP amplitudes (Control & Gabazine) in R format? (y/n): ").strip().lower()
+        export_gabab = input("Export GABAB Area in R format? (y/n): ").strip().lower()
+        export_imbalance = input("\nExport E-I imbalance ratios in R format? (y/n): ").strip().lower()
+        export_inhibition = input("Export GABAA Inhibition amplitudes in R format? (y/n): ").strip().lower()
+    else:
+        export_epsp = 'y'
+        export_gabab = 'y'
+        export_imbalance = 'y'
+        export_inhibition = 'y'
     
     if export_epsp == 'y':
         epsp_R_df = export_EPSP_amplitudes_with_drug_for_R(amplitudes_df)
-        
         if len(epsp_R_df) > 0:
-            print(f"\nCreated EPSP amplitude R format with {len(epsp_R_df)} rows")
-            print(f"ISI columns: {[col for col in epsp_R_df.columns if col.startswith('ISI')]}")
-            print("\nFirst 5 rows:")
-            print(epsp_R_df.head())
-            
             epsp_path = f"{base_output_path}_EPSP_amplitudes_R_format.csv"
             epsp_R_df.to_csv(epsp_path, index=False)
-            print(f"\n✓ Saved EPSP amplitudes R format to: {epsp_path}")
-            
+            print(f"✓ Saved EPSP amplitudes: {epsp_path}")
             results['EPSP_R_format'] = epsp_R_df
     
-    export_imbalance = input("\nExport E-I imbalance ratios in R format? (y/n): ").strip().lower()
+    if export_gabab == 'y':
+        gabab_R_df = export_GABAB_area_for_R(amplitudes_df)
+        if len(gabab_R_df) > 0:
+            gabab_path = f"{base_output_path}_GABAB_Area_R_format.csv"
+            gabab_R_df.to_csv(gabab_path, index=False)
+            print(f"✓ Saved GABAB Area: {gabab_path}")
+            results['GABAB_R_format'] = gabab_R_df
+            
+    if export_inhibition == 'y':
+        inh_R_df = export_GABAA_inhibition_for_R(amplitudes_df)
+        if len(inh_R_df) > 0:
+            inh_path = f"{base_output_path}_GABAA_Inhibition_R_format.csv"
+            inh_R_df.to_csv(inh_path, index=False)
+            print(f"✓ Saved GABAA Inhibition: {inh_path}")
+            results['GABAA_Inhibition_R_format'] = inh_R_df
     
     if export_imbalance == 'y':
         imbalance_R_df = export_E_I_imbalance_for_R(amplitudes_df)
-        
         if len(imbalance_R_df) > 0:
-            print(f"\nCreated E-I imbalance R format with {len(imbalance_R_df)} subjects")
-            print(f"ISI columns: {[col for col in imbalance_R_df.columns if col.startswith('ISI')]}")
-            print("\nFirst 5 rows:")
-            print(imbalance_R_df.head())
-            
             imbalance_path = f"{base_output_path}_EI_imbalance_R_format.csv"
             imbalance_R_df.to_csv(imbalance_path, index=False)
-            print(f"\n✓ Saved E-I imbalance R format to: {imbalance_path}")
-            
+            print(f"✓ Saved E-I imbalance: {imbalance_path}")
             results['EI_Imbalance_R_format'] = imbalance_R_df
     
-    print("\n" + "="*70)
-    print("R FORMAT EXPORT COMPLETE")
-    print("="*70)
+    if interactive:
+        print("\n" + "="*70)
+        print("R FORMAT EXPORT COMPLETE")
+        print("="*70)
     
     return results
 
 def analyze_and_export_E_I_balance(master_df, data_dir, unitary_stim_starts_dict, ISI_times_dict_mapping,
                                    output_path_amplitudes=None, output_path_traces=None,
-                                   export_R_formats=True, base_output_path_R='paper_data/E_I'):
+                                   export_R_formats=True, base_output_path_R='paper_data/E_I',
+                                   interactive=True):
     """
     Complete workflow: analyze E-I balance and export results.
     
@@ -2648,7 +2830,11 @@ def analyze_and_export_E_I_balance(master_df, data_dir, unitary_stim_starts_dict
     print("CALCULATING AMPLITUDES AND ESTIMATED INHIBITION")
     print("="*70)
     
-    E_I_amplitudes, E_I_traces_updated = get_E_I_amplitudes_and_estimated_inhibition_traces(E_I_traces)
+    E_I_amplitudes, E_I_traces_updated = get_E_I_amplitudes_and_estimated_inhibition_traces(
+        E_I_traces, 
+        ISI_times_dict_mapping=ISI_times_dict_mapping, 
+        master_df=master_df
+    )
     print(f"Calculated amplitudes for {len(E_I_amplitudes)} cells")
     results['E_I_amplitudes'] = E_I_amplitudes
     results['E_I_traces_with_inhibition'] = E_I_traces_updated
@@ -2697,7 +2883,7 @@ def analyze_and_export_E_I_balance(master_df, data_dir, unitary_stim_starts_dict
     results['traces_df'] = traces_df
     
     if export_R_formats and len(amplitudes_df) > 0:
-        R_formats = export_E_I_data_with_R_format_options(amplitudes_df, base_output_path_R)
+        R_formats = export_E_I_data_with_R_format_options(amplitudes_df, base_output_path_R, interactive=interactive)
         results['R_formats'] = R_formats
     
     print("\n" + "="*70)
@@ -2844,7 +3030,7 @@ def load_plateau_traces_from_dir(data_dir, master_df=None):
 
 # PLATEAU AREA ANALYSIS FUNCTIONS
 
-def calculate_plateau_area_under_curve(trace, sampling_rate=20000, threshold_mv=35):
+def calculate_plateau_area_under_curve(trace, sampling_rate=20000, threshold_mv=20):
     """
     Calculates Area Under Curve for Plateau Potentials.
     Adaptive: Uses available data if trace ends before 2200ms target.
@@ -2877,7 +3063,119 @@ def calculate_plateau_area_under_curve(trace, sampling_rate=20000, threshold_mv=
         plateau_area = np.trapz(suprathreshold_trace, dx=1/sampling_rate)
         return plateau_area
 
-def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_threshold_mv=35):
+def analyze_girk_unitary_gabab(data_dir, master_df):
+    """
+    Extracts 300ms Unitary traces for GIRK experiments and calculates GABAB area.
+    """
+    girk_cells = master_df[master_df['Experiment Notes'].str.contains('GIRK', na=False)]['Cell_ID'].unique()
+    print(f"Analyzing Unitary GABAB for {len(girk_cells)} GIRK cells...")
+    
+    data_list = []
+    traces_to_export = {}
+
+    for cell_id in girk_cells:
+        cell_id_str = str(cell_id)
+        # Convert date format to match filenames: YYYYMMDD -> MMDDYYYY
+        try:
+            parts = cell_id_str.split('_')
+            date_str, cell_part = parts[0], parts[1]
+            mmddyyyy = f"{date_str[4:6]}{date_str[6:8]}{date_str[:4]}"
+            pkl_name = f"{mmddyyyy}_{cell_part}_processed_data.pkl"
+            pkl_path = os.path.join(data_dir, pkl_name)
+            if not os.path.exists(pkl_path): continue
+            
+            df = pd.read_pickle(pkl_path)
+            if not isinstance(df, pd.DataFrame): continue
+
+            # Loop over sweeps in cell
+            for i in range(len(df)):
+                row = df.iloc[i]
+                meta = row.get('stimulus_metadata_dict', {})
+                isi, num_stim = meta.get('ISI'), meta.get('number_of_stimuli')
+                cond = str(meta.get('condition', '')).strip()
+                
+                # Unitary GABAB condition
+                if (isi == 300.0 or num_stim == 1) and cond and cond.lower() not in ['none', 'nan']:
+                    drug, is_after, c_lower = None, False, cond.lower()
+                    if 'ml297' in c_lower or 'ml-297' in c_lower:
+                        drug, is_after = 'ML297', True
+                    elif 'etx' in c_lower:
+                        drug, is_after = 'ETX', True
+                    elif 'gabazine' in c_lower or 'control' in c_lower:
+                        drug = 'Baseline' 
+                    
+                    if drug:
+                        sr = row.get('acquisition_frequency', 20000.0); dt = 1 / sr
+                        it = row.get('intermediate_traces', {})
+                        if not isinstance(it, dict): continue
+                        
+                        cell_meta = master_df[master_df['Cell_ID'] == cell_id_str]
+                        pathway_raw = str(cell_meta['Stimulation Pathways'].iloc[0]) if not cell_meta.empty else ''
+                        
+                        extracted_list = []
+                        # 1. stim_removed_trace
+                        if 'stim_removed_trace' in it:
+                            srt = it['stim_removed_trace']
+                            if isinstance(srt, dict):
+                                for ch in ['channel_1', 'channel_2']:
+                                    if ch in srt and srt[ch] is not None:
+                                        extracted_list.append((srt[ch], 'Perforant' if ch == 'channel_1' else 'Schaffer'))
+                            elif isinstance(srt, (np.ndarray, list)) and len(srt) > 1000:
+                                pathway = 'Perforant' if 'perforant' in pathway_raw.lower() else 'Schaffer'
+                                if 'perforant' in pathway_raw.lower() and 'schaffer' in pathway_raw.lower():
+                                    notes = str(cell_meta['Experiment Notes'].iloc[0]).lower() if not cell_meta.empty else ''
+                                    if 'perforant' in c_lower or 'perforant' in notes: pathway = 'Perforant'
+                                    elif 'schaffer' in c_lower or 'schaffer' in notes: pathway = 'Schaffer'
+                                extracted_list.append((srt, pathway))
+                        
+                        # 2. offset_trace fallback
+                        if not extracted_list and 'offset_trace' in it:
+                            ot = it['offset_trace']
+                            if isinstance(ot, dict):
+                                for ch in ['channel_1', 'channel_2']:
+                                    if ch in ot and ot[ch] is not None:
+                                        extracted_list.append((ot[ch], 'Perforant' if ch == 'channel_1' else 'Schaffer'))
+                            elif isinstance(ot, (np.ndarray, list)) and len(ot) > 1000:
+                                extracted_list.append((ot, 'Perforant' if 'perforant' in pathway_raw.lower() else 'Schaffer'))
+
+                        for trace, pathway in extracted_list:
+                            if trace is None: continue
+                            trace = np.atleast_1d(trace).flatten()
+                            if trace.size < 500: continue
+                            
+                            stim_start_ms = 100.0
+                            ad = row.get('analysis_dict', {})
+                            if 'EPSP_stim' in ad:
+                                starts = ad['EPSP_stim'].get('channel_1_stim_start', []) or ad['EPSP_stim'].get('channel_2_stim_start', [])
+                                if starts: stim_start_ms = starts[0]
+
+                            baseline_idx = int((stim_start_ms - 5) * sr / 1000)
+                            baseline = np.mean(trace[:max(10, baseline_idx)])
+                            trace_adj = trace - baseline
+                            
+                            start_idx, end_idx = int((stim_start_ms + 50) * sr / 1000), int((stim_start_ms + 300) * sr / 1000)
+                            if start_idx >= trace_adj.size: continue
+                            seg = trace_adj[start_idx:min(end_idx, trace_adj.size)]
+                            gabab_area = -np.trapz(np.where(seg < 0, seg, 0), dx=dt)
+                            
+                            overlay_start, overlay_end = int((stim_start_ms - 10) * sr / 1000), int((stim_start_ms + 300) * sr / 1000)
+                            overlay_trace = trace_adj[max(0, overlay_start):min(trace_adj.size, overlay_end)]
+                            
+                            data_list.append({
+                                'Cell_ID': cell_id_str, 'Drug_Group': drug, 'Pathway': pathway,
+                                'Category': 'After' if is_after else 'Before', 'GABAB_Area': gabab_area, 'Trace': overlay_trace
+                            })
+                            if cell_id_str not in traces_to_export: traces_to_export[cell_id_str] = {}
+                            if cond not in traces_to_export[cell_id_str]: traces_to_export[cell_id_str][cond] = {}
+                            traces_to_export[cell_id_str][cond][pathway] = trace_adj
+        except Exception as e:
+            print(f"  ERROR processing {cell_id_str}: {e}")
+            continue
+
+    print(f"  FINISHED Cell Loop. Total points in data_list: {len(data_list)}")
+    return pd.DataFrame(data_list), traces_to_export
+    
+def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_threshold_mv=20):
     """
     Iterates through MasterDF and categorizes plateau experiments.
     plateau_threshold_mv: Minimum peak height required for plateau detection (mV)
@@ -2885,7 +3183,7 @@ def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_thres
     final_data_list = [] 
     final_traces_dict = {} 
     
-    # Standard threshold is positive (e.g. 35) as offset_trace starts at 0
+    # Standard threshold is positive (e.g. 20) as offset_trace starts at 0
     threshold_mv = plateau_threshold_mv
     
     groups = ['Gabazine_Only', 'Before_ML297', 'After_ML297', 'Before_ETX', 'After_ETX']
@@ -2926,7 +3224,7 @@ def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_thres
     return final_data_list, final_traces_dict
 
 def _extract_single_plateau_condition(cell_id, meta_row, ref_sweep_name, condition_label, 
-                                      all_traces, data_list, traces_dict, threshold_mv=35):
+                                      all_traces, data_list, traces_dict, threshold_mv=20):
     """
     Extracts data for 'Both', 'Schaffer', and 'Perforant' pathways.
     Logic: Both = ref, Schaffer = ref-1, Perforant = ref-2.
@@ -3186,20 +3484,54 @@ def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocol
         ei_key = find_matching_E_I_key(cell_key, E_I_traces.keys())
         if not ei_key: continue
 
+        # --- SELECT ONLY GABAZINE BASELINE SWEEPS ---
+        # Use parse_plateau_sweeps_column to identify the correct Gabazine reference sweep.
+        # For cells with ML297/ETX, the Gabazine sweep is the "Before" condition.
+        # For Gabazine_Only cells, it's the only sweep.
+        # Sweep mapping: Both = ref_num, Schaffer = ref_num - 1, Perforant = ref_num - 2.
         flat_pathways = {}
+        
+        sweeps_map = parse_plateau_sweeps_column(meta.iloc[0].get('Plateau Sweeps', ''))
+        if not sweeps_map or 'Gabazine' not in sweeps_map:
+            continue  # No valid Gabazine sweep info → skip cell
+        
+        # Get all Gabazine reference sweep numbers (the "Both Pathways" sweeps)
+        gabazine_ref_nums = []
+        for sweep_name in sweeps_map['Gabazine']:
+            try:
+                ref_num = int(re.search(r'sweep_(\d+)', sweep_name, re.IGNORECASE).group(1))
+                gabazine_ref_nums.append(ref_num)
+            except (AttributeError, ValueError):
+                continue
+        
+        if not gabazine_ref_nums:
+            continue  # No parseable sweep numbers
+        
+        # Build set of valid sweep names per pathway type
+        # Each Gabazine ref_num gives: Both=ref, Schaffer=ref-1, Perforant=ref-2
+        valid_sweeps_per_pathway = {'Both Pathways': set(), 'Schaffer': set(), 'Perforant': set()}
+        for ref_num in gabazine_ref_nums:
+            valid_sweeps_per_pathway['Both Pathways'].add(f"sweep_{ref_num}")
+            valid_sweeps_per_pathway['Schaffer'].add(f"sweep_{ref_num - 1}")
+            valid_sweeps_per_pathway['Perforant'].add(f"sweep_{ref_num - 2}")
+        
+        # Now collect only the valid Gabazine sweeps from each experiment description
         for desc, sweeps in pathways.items():
             p_type = 'Unknown'
             if 'Both' in desc: p_type = 'Both Pathways'
             elif 'Perforant' in desc: p_type = 'Perforant'
             elif 'Schaffer' in desc: p_type = 'Schaffer'
+            if p_type == 'Unknown': continue
             
-            valid_sweeps = [v for k,v in sweeps.items() if isinstance(v, np.ndarray)]
-            if valid_sweeps:
-                min_len = min(len(s) for s in valid_sweeps)
-                avg = np.mean([s[:min_len] for s in valid_sweeps], axis=0)
+            # Filter to only valid Gabazine baseline sweeps for this pathway type
+            valid_names = valid_sweeps_per_pathway.get(p_type, set())
+            selected = [v for k, v in sweeps.items() if isinstance(v, np.ndarray) and k in valid_names]
+            
+            if selected:
+                min_len = min(len(s) for s in selected)
+                avg = np.mean([s[:min_len] for s in selected], axis=0)
                 flat_pathways[p_type] = avg
 
-        
         
         # --- PHASE 1: COMPUTE EXPECTED TRACES (Schaffer & Perforant) ---
         # We need these regardless of whether we have corresponding plateau traces,
@@ -3262,14 +3594,13 @@ def analyze_supralinearity_peaks(plateau_traces, E_I_traces, theta_stim_protocol
             if measured_trace is None or len(measured_trace) == 0:
                 continue
             
-            # EXCLUSION CHECK: 'Single Pathway Plateau Inclusion'
-            # If 'No', skip independent Schaffer/Perforant analysis
+            # EXCLUSION CHECK: 'Single Pathway Plateau Inclusion' == 'No' → skip
             if pathway_name in ['Schaffer', 'Perforant']:
-                # 'meta' df is defined at start of loop
-                single_pathway_inclusion = str(meta.iloc[0].get('Single Pathway Plateau Inclusion', 'nan')).strip().lower()
-                if single_pathway_inclusion == 'no':
+                single_pathway_inclusion = str(meta.iloc[0].get('Single Pathway Plateau Inclusion', 'nan')).strip()
+                if single_pathway_inclusion == 'No':
                     continue
-            
+
+
             pathway_stim_times = stim_times_dict.get(pathway_name)
             if not pathway_stim_times: continue
                 
@@ -5212,164 +5543,157 @@ def get_coarse_fi_traces_by_condition(dir_path, conditions_of_interest, master_d
     return FI_data
 
 def generate_EI_summary_files(amplitudes_csv_path, output_dir):
-    """Generate summary CSV files for Figure 4 and Supplemental Figure 1 from E_I_amplitudes.csv
+    """Generate summary CSV files for Figure 4,5,6 and 
     Cross-references with master_df to only count cells with 'Full E/I' for apical pathways"""
     import pandas as pd
     import os
     
     df = pd.read_csv(amplitudes_csv_path)
     
-    # Load master_df to filter cells with "Full E/I"
+    # Load master_df to filter cells
     master_df = pd.read_csv('master_df.csv')
-    full_ei_cells = set(master_df[master_df['Experiment Notes'].str.contains('Full E/I', na=False, case=False)]['Cell_ID'].values)
+    
+    # 1. Figure 4 valid cells:
+    fig_4_pattern = r'Full E/I|E/I up.*Gabazine|300 ms unitary Gabazine'
+    fig_4_cells = set(master_df[master_df['Experiment Notes'].str.contains(fig_4_pattern, na=False, case=False)]['Cell_ID'].values)
+    
+    # 1b. Figure 5 and 6 valid cells:
+    fig_5_6_pattern = r'Full E/I|E/I up.*Gabazine'
+    fig_5_6_cells = set(master_df[master_df['Experiment Notes'].str.contains(fig_5_6_pattern, na=False, case=False)]['Cell_ID'].values)
+    
+    # 2. Supplemental Figure 1 valid cells:
+    # Includes all above plus Control-only data
+    supp_pattern = r'Full E/I|E/I up.*Gabazine|E/I up.*Control|300 ms unitary Gabazine|300 ms unitary Control'
+    supp_cells = set(master_df[master_df['Experiment Notes'].str.contains(supp_pattern, na=False, case=False)]['Cell_ID'].values)
     
     pathways = df['Pathway'].unique()
-    genotypes = ['WT', 'GNB1']
+    genotypes = ['WT', 'I80T/+'] if 'I80T/+' in df['Genotype'].unique() else ['WT', 'GNB1']
     
-    # Figure 4 Summary
+    # Figure 5 & 6 Stats Summary
+    fig56_rows = []
+    # Figure 4 Stats Summary (Unitary / ISI 300 focus)
     fig4_rows = []
+    
     for pathway in pathways:
-        for genotype in genotypes:
-            subset = df[(df['Pathway'] == pathway) & (df['Genotype'] == genotype)]
-            if len(subset) == 0:
+        if pd.isna(pathway): continue
+        for genotype in df['Genotype'].unique():
+            subset_all = df[(df['Pathway'] == pathway) & (df['Genotype'] == genotype)]
+            if len(subset_all) == 0:
                 continue
             
-            # For apical pathways, filter to only cells with "Full E/I"
-            # But track ALL cells with any Gabazine for partial count
-            all_cells_this_pathway = subset.copy()
+            # --- Filtering ---
             if pathway in ['Perforant', 'Schaffer']:
-                subset = subset[subset['Cell_ID'].isin(full_ei_cells)]
-            
-            n_cells = subset['Cell_ID'].nunique()
-            cells_with_control = subset[subset['Control_Amplitude'].notna()]['Cell_ID'].nunique()
-            cells_with_gabazine = subset[subset['Gabazine_Amplitude'].notna()]['Cell_ID'].nunique()
-            
-            control_cells = set(subset[subset['Control_Amplitude'].notna()]['Cell_ID'].unique())
-            gabazine_cells = set(subset[subset['Gabazine_Amplitude'].notna()]['Cell_ID'].unique())
-            cells_with_both = len(control_cells & gabazine_cells)
-            
-            # Count partial Gabazine cells (cells with Gabazine but NOT in "Full E/I" set)
-            if pathway in ['Perforant', 'Schaffer']:
-                all_gabazine_cells = set(all_cells_this_pathway[all_cells_this_pathway['Gabazine_Amplitude'].notna()]['Cell_ID'].unique())
-                partial_gabazine_cells = all_gabazine_cells - gabazine_cells
-                n_partial_gabazine = len(partial_gabazine_cells)
+                subset_4 = subset_all[subset_all['Cell_ID'].isin(fig_4_cells)].copy()
+                subset_56 = subset_all[subset_all['Cell_ID'].isin(fig_5_6_cells)].copy()
             else:
-                n_partial_gabazine = 0
+                subset_4 = subset_all.copy()
+                subset_56 = subset_all.copy()
             
-            # Panel C/D: Calculate N range (includes both full and partial Gabazine)
-            # Full Gabazine cells
-            full_gab_n_per_isi = []
-            for isi in [10, 25, 50, 100, 300]:
-                n = subset[subset['ISI'] == isi]['Gabazine_Amplitude'].notna().sum()
-                if n > 0:
-                    full_gab_n_per_isi.append(n)
+            # --- Figure 5 & 6 Logic (LME uses all available ISIs) ---
+            # Cells that have AT LEAST ONE valid ISI for the metric
+            cells_any_gab = subset_56[subset_56['Gabazine_Amplitude'].notna()]['Cell_ID'].unique()
+            cells_any_inh = subset_56[subset_56['Control_Amplitude'].notna() & subset_56['Gabazine_Amplitude'].notna()]['Cell_ID'].unique()
+            cells_gabab = subset_56[subset_56['GABAB_Area'].notna()]['Cell_ID'].unique()
             
-            # Full + Partial Gabazine cells (for apical only)
-            if pathway in ['Perforant', 'Schaffer'] and n_partial_gabazine > 0:
-                combined_gab_n_per_isi = []
-                for isi in [10, 25, 50, 100, 300]:
-                    n = all_cells_this_pathway[all_cells_this_pathway['ISI'] == isi]['Gabazine_Amplitude'].notna().sum()
-                    if n > 0:
-                        combined_gab_n_per_isi.append(n)
-                
-                panel_cd_max = max(combined_gab_n_per_isi) if combined_gab_n_per_isi else 0
-                panel_cd_min = min(full_gab_n_per_isi) if full_gab_n_per_isi else 0
-            else:
-                panel_cd_max = max(full_gab_n_per_isi) if full_gab_n_per_isi else 0
-                panel_cd_min = min(full_gab_n_per_isi) if full_gab_n_per_isi else 0
+            # Calculate ranges per ISI
+            target_isis = [10, 25, 50, 100, 300]
+            n_per_isi_gab_56 = [subset_56[(subset_56['ISI'] == isi)]['Gabazine_Amplitude'].notna().sum() for isi in target_isis]
+            n_per_isi_inh_56 = [subset_56[(subset_56['ISI'] == isi) & subset_56['Control_Amplitude'].notna() & subset_56['Gabazine_Amplitude'].notna()]['Cell_ID'].nunique() for isi in target_isis]
             
-            panel_cd_range = f"{panel_cd_min}-{panel_cd_max}"
+            panel_cd_range_56 = f"{min(n_per_isi_gab_56)}-{max(n_per_isi_gab_56)}" if n_per_isi_gab_56 else "0-0"
+            panel_e_range_56 = f"{min(n_per_isi_inh_56)}-{max(n_per_isi_inh_56)}" if n_per_isi_inh_56 else "0-0"
+
+            fig56_rows.append({
+                'Pathway': pathway, 'Genotype': genotype, 
+                'Excitation_N (Total Cells)': len(cells_any_gab),
+                'Inhibition_and_Supralinearity_N (Total Cells)': len(cells_any_inh),
+                'GABAB_Area_N (Total Cells)': len(cells_gabab),
+                'Figure_5_B_D_Range (per ISI)': panel_cd_range_56,
+                'Figure_6_Supralinearity_Range': panel_cd_range_56,
+                'Figure_5_E_GABAB_Range': panel_e_range_56
+            })
+
+            # --- Figure 4 Logic (Unitary ISI 300 focus) ---
+            subset_300 = subset_4[subset_4['ISI'] == 300]
+            n_300_gab = subset_300['Gabazine_Amplitude'].notna().sum()
+            n_300_inh = subset_300[subset_300['Control_Amplitude'].notna() & subset_300['Gabazine_Amplitude'].notna()]['Cell_ID'].nunique()
+            n_300_gabab = subset_300['GABAB_Area'].notna().sum()
             
             fig4_rows.append({
-                'Pathway': pathway, 'Genotype': genotype, 'Full_EI_Count': n_cells,
-                'Cells_With_Control': cells_with_control, 'Cells_With_Gabazine': cells_with_gabazine,
-                'Cells_With_Partial_Gabazine': n_partial_gabazine,
-                'Cells_With_Both': cells_with_both, 'Panel_C_D_Total_Gabazine': panel_cd_max,
-                'Panel_C_D_Range': panel_cd_range, 'Panel_E_Total_Both': cells_with_both,
-                'Panel_E_Range': f"{cells_with_both}-{cells_with_both}"
+                'Pathway': pathway, 'Genotype': genotype, 
+                'Excitation_Amplitude_N': n_300_gab,
+                'Inhibition_Amplitude_N': n_300_inh,
+                'E_I_Imbalance_N': n_300_inh,
+                'GABAB_Area_N': n_300_gabab,
+                'Supralinearity_N': n_300_inh
             })
     
+    fig56_df = pd.DataFrame(fig56_rows)
+    fig56_df.to_csv(os.path.join(output_dir, 'Figure_5_6_Stats_Summary.csv'), index=False)
+    print(f"✓ Generated Figure_5_6_Stats_Summary")
+    
     fig4_df = pd.DataFrame(fig4_rows)
-    fig4_df.to_csv(os.path.join(output_dir, 'Figure_4_Full_EI_Summary.csv'), index=False)
-    print(f"✓ Generated Figure 4 EI Summary")
+    fig4_df.to_csv(os.path.join(output_dir, 'Figure_4_Stats_Summary.csv'), index=False)
+    print(f"✓ Generated Figure_4_Stats_Summary")
     
     # Supplemental Figure 1 Summary
     supp_rows = []
     
-    # Define cell sets once
-    full_ei_cell_ids = set(full_ei_cells)
-    
-    # Define valid control cells (Full E/I or E/I Up to...)
-    control_mask = master_df['Experiment Notes'].str.contains('E/I Up to', na=False, case=False) | \
-                   master_df['Experiment Notes'].str.contains('Full E/I', na=False, case=False)
-    valid_control_cells = set(master_df[control_mask]['Cell_ID'])
-
     for pathway in ['Schaffer', 'Perforant', 'Basal_Stratum_Oriens']:
         pathway_df = df[df['Pathway'] == pathway]
         
-        for genotype in genotypes:
-            subset = pathway_df[pathway_df['Genotype'] == genotype]
-            
-            if len(subset) == 0:
+        for genotype in df['Genotype'].unique():
+            subset_all = pathway_df[pathway_df['Genotype'] == genotype]
+            if len(subset_all) == 0:
                 continue
             
-            # --- Define Cell Populations ---
-            # 1. Full E/I Population (for Gabazine & Estimated Inhibition)
             if pathway in ['Schaffer', 'Perforant']:
-                full_ei_subset = subset[subset['Cell_ID'].isin(full_ei_cell_ids)]
+                supp_subset_all = subset_all[subset_all['Cell_ID'].isin(supp_cells)].copy()
+                fig_4_subset = subset_all[subset_all['Cell_ID'].isin(fig_4_cells)].copy()
             else:
-                # For Basal, we assume all are valid/full unless specified otherwise,
-                # or we trust the input DF which has already filtered valid cells.
-                # If Basal also needs strict filtering, add logic here.
-                full_ei_subset = subset 
-
-            # 2. Control Population (Includes Full E/I + "E/I Up to" / Control-Only)
-            # Filter subset to only valid annotations
-            control_subset = subset[subset['Cell_ID'].isin(valid_control_cells)]
+                supp_subset_all = subset_all.copy()
+                fig_4_subset = subset_all.copy()
             
-            ranges_dict = {}
+            summation_isis = [10, 25, 50, 100, 300]
             
-            # --- Calculate N (Single Value) for each Metric ---
-            # NOTE: We report the Total Number of Unique Cells contributing to ANY of the summation ISIs [10, 25, 50, 100].
-            # ISI 300 (Unitary) is strictly excluded.
-            
-            summation_isis = [10, 25, 50, 100]
-            
-            # A. Control (With Inhibition) - Uses LARGER population (Full + Partial)
-            n_control = control_subset[
-                (control_subset['ISI'].isin(summation_isis)) & 
-                (control_subset['Control_Amplitude'].notna())
+            # Control uses the wider Supp pool
+            n_control = supp_subset_all[
+                (supp_subset_all['ISI'].isin(summation_isis)) & 
+                (supp_subset_all['Control_Amplitude'].notna())
             ]['Cell_ID'].nunique()
-            ranges_dict['Control_N_Range'] = str(n_control)
             
-            # B. Gabazine (No Inhibition) - Uses STRICT Full E/I population
-            n_gabazine = full_ei_subset[
-                (full_ei_subset['ISI'].isin(summation_isis)) & 
-                (full_ei_subset['Gabazine_Amplitude'].notna())
+            # Gabazine and Expected use the strictly Gabazine (Fig 4 pool, which includes 300ms)
+            n_gabazine = fig_4_subset[
+                (fig_4_subset['ISI'].isin(summation_isis)) & 
+                (fig_4_subset['Gabazine_Amplitude'].notna())
             ]['Cell_ID'].nunique()
-            ranges_dict['Gabazine_N_Range'] = str(n_gabazine)
             
-            # C. Expected (Linear Sum) - Calculated from Unitary (ISI 300)
-            n_expected = full_ei_subset[
-                (full_ei_subset['ISI'].isin(summation_isis)) & 
-                (full_ei_subset['Expected_EPSP_Amplitude'].notna())
+            n_expected = fig_4_subset[
+                (fig_4_subset['ISI'].isin(summation_isis)) & 
+                (fig_4_subset['Expected_EPSP_Amplitude'].notna())
             ]['Cell_ID'].nunique()
-            ranges_dict['Expected_N_Range'] = str(n_expected)
             
-            # D. Estimated Inhibition (Gabazine - Control) - Requires BOTH, so strictly Full E/I population
-            n_est_inh = full_ei_subset[
-                (full_ei_subset['ISI'].isin(summation_isis)) & 
-                (full_ei_subset['Control_Amplitude'].notna()) & 
-                (full_ei_subset['Gabazine_Amplitude'].notna())
+            # Estimated Inhibition requires BOTH Control AND Gabazine traces (so needs the Fig 4 pool)
+            n_est_inh = fig_4_subset[
+                (fig_4_subset['ISI'].isin(summation_isis)) & 
+                (fig_4_subset['Control_Amplitude'].notna()) & 
+                (fig_4_subset['Gabazine_Amplitude'].notna())
             ]['Cell_ID'].nunique()
-            ranges_dict['Est_Inhibition_N_Range'] = str(n_est_inh)
             
-            row = {'Pathway': pathway, 'Genotype': genotype}
-            row.update(ranges_dict)
-            supp_rows.append(row)
-    
+            # E/I Imbalance is same as Inhibition population size
+            
+            supp_rows.append({
+                'Pathway': pathway,
+                'Genotype': genotype,
+                'Control_N_Range': str(n_control),
+                'Gabazine_N_Range': str(n_gabazine),
+                'Expected_N_Range': str(n_expected),
+                'Estimated_Inhibition_N': str(n_est_inh),
+                'E/I_Imbalance_N': str(n_est_inh)
+            })
+            
     supp_df = pd.DataFrame(supp_rows)
     supp_df.to_csv(os.path.join(output_dir, 'Supplemental_Figure_1_EI_Summary.csv'), index=False)
     print(f"✓ Generated Supplemental Figure 1 EI Summary")
     
-    return fig4_df, supp_df
+    return fig56_df, fig4_df, supp_df

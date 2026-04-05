@@ -374,17 +374,97 @@ def run_stats_figure_3():
         stats_df.to_csv(save_path, index=False)
         print(f"\n✓ Saved Figure 3 stats to: {save_path}")
 
+# ==================================================================================================
+# FIGURE 4: UNITARY E:I BREAKDOWN STATISTICS
+# ==================================================================================================
 
-
-def run_stats_figure_6():
+def run_stats_figure_4():
     """
-    Statistical analysis for Figure 6: Dendritic Excitability
+    Statistical comparisons for Figure 4 bar plots (ISI = 300ms unitary condition).
+    Metrics tested:
+      - Gabazine_Amplitude        (Excitation, Row 3)
+      - Estimated_Inhibition_Amplitude  (GABAA, Row 4)
+      - GABAB_Area                (Slow IPSP, Row 5)
+    Each across 3 pathways: Perforant, Schaffer, Basal_Stratum_Oriens
+    Test: Mann-Whitney U (non-parametric, two-sided)
+    """
+    print("\n" + "="*80)
+    print("FIGURE 4: UNITARY E:I BREAKDOWN STATISTICS")
+    print("="*80)
+
+    all_stats_export = []
+
+    def record_stat(panel, metric, pathway, res, n_wt, n_gnb1):
+        sig = res['Significance']
+        print(f"  [{panel}] {metric} | {pathway}: p={res['p']:.4f} ({sig})  WT n={n_wt}, I80T/+ n={n_gnb1}")
+        all_stats_export.append({
+            'Figure_Panel': panel,
+            'Metric': metric,
+            'Pathway': pathway,
+            'Test_Used': res['Test'],
+            'Statistic': res['Statistic'],
+            'P_Value': res['p'],
+            'Significance': sig,
+            'Normality_Check': res['Normality'],
+            'Mean_WT': res.get('Mean_WT', np.nan),
+            'Mean_GNB1': res.get('Mean_GNB1', np.nan),
+            'SEM_WT': res.get('SEM_WT', np.nan),
+            'SEM_GNB1': res.get('SEM_GNB1', np.nan),
+            'N_WT': n_wt,
+            'N_GNB1': n_gnb1,
+        })
+
+    df_amp = pd.read_csv('paper_data/E_I_data/E_I_amplitudes.csv')
+    df_unitary = df_amp[df_amp['ISI'] == 300].copy()
+
+    metrics = [
+        ('Gabazine_Amplitude',           'C'),
+        ('Estimated_Inhibition_Amplitude','D'),
+        ('GABAB_Area',                   'E'),
+    ]
+    pathways = ['Perforant', 'Schaffer', 'Basal_Stratum_Oriens']
+
+    for metric, panel in metrics:
+        print(f"\n--- Panel {panel}: {metric} ---")
+        for pathway in pathways:
+            sub = df_unitary[
+                (df_unitary['Pathway'] == pathway) &
+                df_unitary[metric].notna()
+            ]
+            wt   = sub[sub['Genotype'] == 'WT'][metric].dropna()
+            gnb1 = sub[sub['Genotype'] == 'GNB1'][metric].dropna()
+            if len(wt) < 3 or len(gnb1) < 3:
+                print(f"  {pathway}: insufficient data (WT n={len(wt)}, GNB1 n={len(gnb1)})")
+                continue
+            res = compare_two_groups(wt, gnb1)
+            res.update({
+                'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(),
+                'SEM_WT':  wt.sem(),  'SEM_GNB1':  gnb1.sem(),
+            })
+            record_stat(f'Fig 4{panel}', metric, pathway, res, len(wt), len(gnb1))
+
+    # Export
+    if all_stats_export:
+        stats_df = pd.DataFrame(all_stats_export)
+        save_path = os.path.join(DATA_ROOT, 'E_I_data', 'Stats_Results_Figure_4.csv')
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        stats_df.to_csv(save_path, index=False)
+        print(f"\n✓ Saved Figure 4 stats to: {save_path}")
+
+
+# ==================================================================================================
+# FIGURE 7: DENDRITIC EXCITABILITY STATISTICS
+# ==================================================================================================
+
+def run_stats_figure_7():
+    """
+    Statistical analysis for Figure 7: Dendritic Excitability
     
     Panel C: Plateau Area - WT vs GNB1 for Schaffer and Perforant pathways
             (Only data from 07/09/2024 onwards - Hardware fix)
     """
     print("\n" + "="*80)
-    print("FIGURE 6: DENDRITIC EXCITABILITY STATISTICS")
+    print("FIGURE 7: DENDRITIC EXCITABILITY STATISTICS")
     print("="*80)
     
     all_stats_export = []
@@ -416,7 +496,7 @@ def run_stats_figure_6():
     # --- Load Supralinearity Data ---
     df_supralin = load_data('supralinearity', 'Supralinear_AUC_Total.csv')
 
-    # ===========================================================================
+    # --- Save Figure 6 Stats ---
     # PANEL C: Plateau Area - WT vs GNB1 for Schaffer and Perforant Pathways
     # Note: Filtering by 'Single Pathway Plateau Inclusion' handled during export
     # ===========================================================================
@@ -472,41 +552,57 @@ def run_stats_figure_6():
 
     # ===========================================================================
     # PANEL F: Supralinear Total AUC - WT vs GNB1 by Pathway
-    # N values MUST match Panel C per pathway (filter to Panel C cell set)
+    # Inclusion criteria enforced from master_df:
+    #   1. 'Inclusion' column must contain 'plateau' (all pathways)
+    #   2. 'Single Pathway Plateau Inclusion' must be 'Yes' (Schaffer/Perforant only)
+    # Panel D is INDEPENDENT of Panel E (no 20mV plateau threshold cross-filter).
     # ===========================================================================
-    if df_supralin is not None and df_plateau is not None:
+    if df_supralin is not None:
         print("\n--- Panel F: Supralinear Total AUC ---")
-        
-        valid_conditions = ['Gabazine_Only', 'Before_ML297', 'Before_ETX']
-        
-        # Map supralinearity pathway names -> plateau pathway names -> display labels
+
+        # Build valid cell sets from master_df
+        master_df_local = pd.read_csv('master_df.csv', low_memory=False)
+        # All cells with 'plateau' in Inclusion (valid for Both Pathways)
+        plateau_included = set(
+            master_df_local[
+                master_df_local['Inclusion'].astype(str).str.contains('plateau', case=False, na=False)
+            ]['Cell_ID'].astype(str)
+        )
+        # Subset with Single Pathway Plateau Inclusion == 'Yes' (valid for Schaffer/Perforant)
+        sp_included = set(
+            master_df_local[
+                (master_df_local['Inclusion'].astype(str).str.contains('plateau', case=False, na=False)) &
+                (master_df_local['Single Pathway Plateau Inclusion'].astype(str).str.strip() == 'Yes')
+            ]['Cell_ID'].astype(str)
+        )
+
         pathway_info = {
-            'Both Pathways': ('Both', 'Both'),
-            'Schaffer':      ('Schaffer', 'CA3'),
-            'Perforant':     ('Perforant', 'ECIII'),
+            'Both Pathways': 'Both',
+            'Schaffer':      'CA3',
+            'Perforant':     'ECIII',
         }
-        
-        for supra_name, (plat_name, display_label) in pathway_info.items():
-            # Get Panel C cell IDs for this pathway
-            panel_c_cells = df_plateau[
-                (df_plateau['Condition'].isin(valid_conditions)) & 
-                (df_plateau['Pathway'] == plat_name)
-            ].dropna(subset=['Plateau_Area'])['Cell_ID'].unique()
-            
-            # Filter supralinearity to ONLY cells present in Panel C
+
+        for supra_name, display_label in pathway_info.items():
+            # Select valid cell set: SP-gated for individual pathways, plateau-only for Both
+            valid_cells = sp_included if supra_name in ['Schaffer', 'Perforant'] else plateau_included
             pathway_data = df_supralin[
                 (df_supralin['Pathway'] == supra_name) &
-                (df_supralin['Cell_ID'].isin(panel_c_cells))
+                (df_supralin['Cell_ID'].astype(str).isin(valid_cells))
             ]
-            
-            wt = pathway_data[pathway_data['Genotype'] == 'WT']['Total_AUC'].dropna()
+
+            wt   = pathway_data[pathway_data['Genotype'] == 'WT'  ]['Total_AUC'].dropna()
             gnb1 = pathway_data[pathway_data['Genotype'] == 'GNB1']['Total_AUC'].dropna()
-            
+
             print(f"  {display_label}: WT n={len(wt)}, GNB1 n={len(gnb1)}")
             if len(wt) > 0 and len(gnb1) > 0:
                 res = compare_two_groups(wt, gnb1)
-                res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'SEM_WT': wt.sem(), 'SEM_GNB1': gnb1.sem()})
-                record_stat("Fig 6F", f"Supralinear Total AUC ({display_label}): WT vs GNB1", res, n_wt=len(wt), n_gnb1=len(gnb1))
+                res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(),
+                            'SEM_WT': wt.sem(), 'SEM_GNB1': gnb1.sem()})
+                record_stat("Fig 6F", f"Supralinear Total AUC ({display_label}): WT vs GNB1",
+                            res, n_wt=len(wt), n_gnb1=len(gnb1))
+
+
+
 
     # ===========================================================================
     # PANEL G: Supralinear Peak Across Theta Cycles
@@ -600,130 +696,88 @@ def run_stats_figure_6():
     if all_stats_export:
         stats_df = pd.DataFrame(all_stats_export)
         
-        save_path = os.path.join(DATA_ROOT, 'Plateau_data', 'Stats_Results_Figure_6.csv')
+        save_path = os.path.join(DATA_ROOT, 'Plateau_data', 'Stats_Results_Figure_7.csv')
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         stats_df.to_csv(save_path, index=False)
-        print(f"\n✓ Saved Figure 6 stats to: {save_path}")
-
+        print(f"\n✓ Saved Figure 7 stats to: {save_path}")
 
 # ==================================================================================================
-# FIGURE 5: GABAb ANALYSIS STATS
+# FIGURE 8: GIRK and Baclofen PHARMACOLOGY STATISTICS
 # ==================================================================================================
 
-def run_stats_figure_5():
+def run_stats_figure_8():
     print("\n" + "="*80)
-    print("FIGURE 5: GABAb ANALYSIS STATISTICS")
+    print("FIGURE 8: GIRK PHARMACOLOGY STATISTICS")
     print("="*80)
     
-    # Load GABAb metrics
-    gabab_df = load_data('gabab_analysis', 'GABAb_Analysis_Metrics.csv')
-    
-    if gabab_df is None:
-        print("❌ Error: GABAb data not found")
-        return
-    
-    # Filter for Gabazine condition only (case-insensitive)
-    gabab_gab = gabab_df[gabab_df['Condition'].str.lower() == 'gabazine'].copy()
-    gabab_gab = gabab_gab.drop_duplicates(subset=['Cell_ID', 'Channel_Name'])
-    
     all_stats_export = []
-    
-    def record_stat_fig5(fig_panel, comparison_name, res):
-        print_stat_result(fig_panel, comparison_name, res)
+
+    def record_stat(drug, pathway, comparison, res):
+        print(f"  {drug} | {pathway} | {comparison}: p={res['p']:.4f} ({res['Significance']})")
         all_stats_export.append({
-            'Comparison': comparison_name,
-            'Mean_WT': res['Mean_WT'],
-            'Mean_GNB1': res['Mean_GNB1'],
-            'SEM_WT': res['SEM_WT'],
-            'SEM_GNB1': res['SEM_GNB1'],
-            'Figure_Panel': fig_panel,
-            'Test_Used': res['Test'],
-            'Statistic': res['Statistic'],
-            'P_Value': res['p'],
-            'Significance': res['Significance'],
-            'Normality_Info': res['Normality']
+            'Drug': drug,
+            'Pathway': pathway,
+            'Comparison': comparison,
+            'p_value': res['p'],
+            'test_stat': res['Statistic'],
+            'test_type': res['Test'],
+            'WT_mean': res.get('Mean_WT', np.nan),
+            'GNB1_mean': res.get('Mean_GNB1', np.nan),
+            'WT_n': res.get('N_WT', 0),
+            'GNB1_n': res.get('N_GNB1', 0),
+            'Significance': res['Significance']
         })
-    
-    # Define metrics and panels
-    pathways = [
-        ('Perforant Path', 'Perforant'),
-        ('Schaffer Collateral', 'Schaffer'),
-        ('Stratum Oriens', 'Basal')
-    ]
-    
-    # Only test the metric that's actually plotted (Slow IPSP Area)
-    metric_col = 'Integral_mV_ms'
-    metric_name = 'Slow IPSP Area'
-    
-    # Panel mapping for Figure 5 Row 2 (Metrics):
-    # D = Perforant, E = Schaffer, F = Basal
-    panel_letters = {
-        'Perforant': 'D',
-        'Schaffer': 'E',
-        'Basal': 'F'
-    }
-    
-    print()
-    for pathway_key, pathway_short in pathways:
-        pathway_data = gabab_gab[gabab_gab['Channel_Name'] == pathway_key]
-        
-        print(f"--- {pathway_short} Pathway ---")
-        
-        panel = f"Fig 5{panel_letters[pathway_short]}"
-        comparison = f"{pathway_short} - {metric_name}: WT vs GNB1"
-        
-        wt = pathway_data[pathway_data['Genotype'] == 'WT'][metric_col].dropna()
-        gnb1 = pathway_data[pathway_data['Genotype'] == 'GNB1'][metric_col].dropna()
 
-        wt_mean = wt.mean()
-        wt_sem = wt.sem()
-        gnb1_mean = gnb1.mean()
-        gnb1_sem = gnb1.sem()
-                
-        if len(wt) > 0 and len(gnb1) > 0:
-            res = compare_two_groups(wt, gnb1)
-            res.update({'Mean_WT': wt_mean, 'Mean_GNB1': gnb1_mean, 'SEM_WT': wt_sem, 'SEM_GNB1': gnb1_sem})
-            record_stat_fig5(panel, comparison, res)
-        else:
-            print(f"[{panel}] {comparison}: Insufficient data")
-        
-        print()
-    
-    # Add Baclofen Vm Change analysis
-    print("--- Baclofen-Induced Vm Change ---")
-    vm_change_df = load_data('gabab_analysis', 'Baclofen_Vm_Change.csv')
-    
-    if vm_change_df is not None:
-        panel = "Fig 5I"
-        comparison = "Baclofen Vm Change: WT vs GNB1"
-        
-        wt_vm = vm_change_df[vm_change_df['Genotype'] == 'WT']['Voltage Change'].dropna()
-        gnb1_vm = vm_change_df[vm_change_df['Genotype'] == 'GNB1']['Voltage Change'].dropna()
+    # 1. GIRK Plateau Deltas
+    df_girk = load_data('Plateau_data', 'Plateau_Delta_GIRK.csv')
+    if df_girk is not None:
+        for drug in ['ML297', 'ETX']:
+            for pathway in ['Both', 'Perforant', 'Schaffer']:
+                sub = df_girk[(df_girk['Drug'] == drug) & (df_girk['Pathway'] == pathway)]
+                wt = sub[sub['Genotype'] == 'WT']['Delta_Area']
+                gnb1 = sub[sub['Genotype'] == 'GNB1']['Delta_Area']
+                if len(wt) > 2 and len(gnb1) > 2:
+                    res = compare_two_groups(wt, gnb1)
+                    res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'N_WT': len(wt), 'N_GNB1': len(gnb1)})
+                    record_stat(drug, pathway, "WT vs GNB1 (Plateau Delta)", res)
 
-        wt_mean = wt_vm.mean()
-        wt_sem = wt_vm.sem()
-        gnb1_mean = gnb1_vm.mean()
-        gnb1_sem = gnb1_vm.sem()
-        
-        if len(wt_vm) > 0 and len(gnb1_vm) > 0:
-            res = compare_two_groups(wt_vm, gnb1_vm)
-            res.update({'Mean_WT': wt_mean, 'Mean_GNB1': gnb1_mean, 'SEM_WT': wt_sem, 'SEM_GNB1': gnb1_sem})
-            record_stat_fig5(panel, comparison, res)
+    # 2. Unitary GABAB Area Deltas (Pathway Specific)
+    df_unitary = load_data('Plateau_data', 'GIRK_Unitary_GABAB_Deltas.csv')
+    if df_unitary is not None:
+        for drug in ['ML297', 'ETX']:
+            for pathway in ['Perforant', 'Schaffer']:
+                sub = df_unitary[(df_unitary['Drug'] == drug) & (df_unitary['Pathway'] == pathway)]
+                wt = sub[sub['Genotype'] == 'WT']['Delta_GABAB_Area']
+                gnb1 = sub[sub['Genotype'] == 'GNB1']['Delta_GABAB_Area']
+                if len(wt) >= 2 and len(gnb1) >= 2:
+                    res = compare_two_groups(wt, gnb1)
+                    res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'N_WT': len(wt), 'N_GNB1': len(gnb1)})
+                    record_stat(drug, pathway, f"WT vs GNB1 ({pathway} Unitary Delta)", res)
+
+
+    # 3. Baclofen Vm Changes — computed fresh from source data
+    df_bac_vm = load_data('gabab_analysis', 'Baclofen_Vm_Change.csv')
+    if df_bac_vm is not None:
+        wt_bac   = df_bac_vm[df_bac_vm['Genotype'] == 'WT']['Voltage Change'].dropna()
+        gnb1_bac = df_bac_vm[df_bac_vm['Genotype'] == 'GNB1']['Voltage Change'].dropna()
+        if len(wt_bac) >= 2 and len(gnb1_bac) >= 2:
+            res = compare_two_groups(wt_bac, gnb1_bac)
+            res.update({
+                'Mean_WT':  wt_bac.mean(),  'Mean_GNB1': gnb1_bac.mean(),
+                'N_WT':     len(wt_bac),    'N_GNB1':    len(gnb1_bac)
+            })
+            record_stat('Baclofen', 'Both', "WT vs GNB1 (ΔVm)", res)
         else:
-            print(f"[{panel}] {comparison}: Insufficient data")
-        
-        print()
+            print("  ⚠ Baclofen Vm Change: insufficient data for comparison")
     else:
-        print("⚠ Baclofen Vm Change data not found")
-        print()
-    
-    # Save results
-    stats_df = pd.DataFrame(all_stats_export)
-    save_path = os.path.join(DATA_ROOT, 'gabab_analysis', 'Stats_Results_Figure_5.csv')
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    stats_df.to_csv(save_path, index=False)
-    print(f"✓ Saved Figure 5 stats to: {save_path}")
+        print("  ⚠ Baclofen_Vm_Change.csv not found — Panel E will lack stats")
 
+    # Export
+    if all_stats_export:
+        stats_df = pd.DataFrame(all_stats_export)
+        save_path = os.path.join(DATA_ROOT, 'Plateau_data', 'Stats_Results_Figure_8.csv')
+        stats_df.to_csv(save_path, index=False)
+        print(f"\n✓ Saved Figure 7 stats to: {save_path}")
 
 # ==================================================================================================
 # SUPPLEMENTAL FIGURE 3: PROTEIN LEVELS
@@ -789,6 +843,7 @@ if __name__ == "__main__":
     run_stats_figure_1()
     run_stats_figure_2()
     run_stats_figure_3()
-    run_stats_figure_5()  # GABAb
-    run_stats_figure_6()  # Dendritic Excitability
+    run_stats_figure_4()  # Unitary E:I Breakdown
+    run_stats_figure_7()  # Dendritic Excitability
+    run_stats_figure_8()  # GIRK Pharmacology
     run_stats_supplemental_figure_3() # Protein Levels

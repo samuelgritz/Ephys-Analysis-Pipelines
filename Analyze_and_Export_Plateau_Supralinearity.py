@@ -52,15 +52,20 @@ if __name__ == "__main__":
     print("--- 1. LOADING METADATA ---")
     master_df_raw = pd.read_csv(master_df_path, low_memory=False)
     
-    # --- SKIP GLOBAL INCLUSION FILTER (User Request: "Do not filter Pathway Inclusion for Both") ---
-    # We must retain 'Both' pathway cells that might fail single-pathway inclusion criteria.
-    # Downstream stats (R) will filter Perforant/Schaffer matches to Panel C, which is robust.
-    # master_df = filter_master_df_by_inclusion(master_df_raw)
-    master_df = master_df_raw.copy()
+    # --- FILTER: Only cells with 'plateau' in the Inclusion column ---
+    # This is the primary gate: master_df 'Inclusion' must contain the word 'plateau'
+    # (e.g. 'Yes: [Coarse-FI, E/I, plateau]'). Cells without it are excluded.
+    # The 'Single Pathway Plateau Inclusion' column is checked separately downstream 
+    # in analyze_supralinearity_peaks() for Schaffer/Perforant pathways only.
+    # 'Both Pathways' analysis only requires this 'plateau' Inclusion gate.
+    plateau_mask = master_df_raw['Inclusion'].astype(str).str.contains('plateau', case=False, na=False)
+    master_df = master_df_raw[plateau_mask].copy()
+    print(f"  Plateau Inclusion Filter: {plateau_mask.sum()} / {len(master_df_raw)} cells retained.")
     
     # --- NO HARDCODED DATE FILTER ---
     # Date-based exclusion for individual pathways is handled in analysis_utils.py
     # via _extract_single_plateau_condition() and the 'Single Pathway Plateau Inclusion' column.
+
 
     # --- Get Data Directory (Box Compatible) ---
     DATA_DIR = box_utils.get_data_path(target_folder_name=PROJECT_DATA_FOLDER)

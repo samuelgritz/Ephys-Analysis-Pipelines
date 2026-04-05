@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import pickle
 import box_utils
+from matplotlib.patches import Patch
 
 # Import Plotting Functions
 from plotting_utils import *
@@ -170,7 +171,7 @@ def plot_figure_1_behavior():
     # C-right: bar plot
     ax_c = fig.add_subplot(gs_c[1])
     if df_of_loco is not None:
-        plot_bar_scatter(ax_c, df_of_loco, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order)
+        plot_bar_scatter(ax_c, df_of_loco, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order, ymax=50)
         ax_c.set_title('Locomotion (Open Field)', fontsize=8)
         annotate_from_stats(ax_c, df_stats, "Fig 1C", "Locomotion", x1=0, x2=1, y_pos=get_safe_y(df_of_loco['Distance (m)']))
 
@@ -193,6 +194,7 @@ def plot_figure_1_behavior():
         plot_bar_scatter(ax_d, df_of_anx, 'Genotype', 'Center_Outer_Time_Ratio', 'Genotype', order=geno_order)
         ax_d.set_title('Anxiety Ratio', fontsize=8)
         ax_d.set_ylabel('Center Outer Time Ratio')
+        apply_clean_yticks(ax_d)
         annotate_from_stats(ax_d, df_stats, "Fig 1D", "Anxiety", x1=0, x2=1, y_pos=get_safe_y(df_of_anx['Center_Outer_Time_Ratio']))
 
     # ===== ROW 3: E (Circadian Activity) | F (Total Dark Phase) =====
@@ -219,6 +221,7 @@ def plot_figure_1_behavior():
         plot_bar_scatter(ax_f, df_dvc_cages, 'Genotype', 'Sum_All_Dark', 'Genotype', order=geno_order)
         ax_f.set_title('Total Activity (Dark Phase)', fontsize=8)
         ax_f.set_ylabel('Summed Activity (m)')
+        apply_clean_yticks(ax_f)
         if df_stats is not None:
             annotate_from_stats(ax_f, df_stats, "Fig 1G", "DVC Dark Phase", x1=0, x2=1, y_pos=get_safe_y(df_dvc_cages['Sum_All_Dark']))
 
@@ -241,17 +244,16 @@ def plot_figure_1_behavior():
     ax_h = fig.add_subplot(gs_row4[1])
     add_subplot_label(ax_h, "H")
     if df_tmaze_entries is not None:
-        plot_bar_scatter(ax_h, df_tmaze_entries, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order)
+        plot_bar_scatter(ax_h, df_tmaze_entries, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order, ymax=50)
         ax_h.set_title('Distance Traveled', fontsize=8)
         ax_h.set_ylabel('Distance (m)')
-        ax_h.yaxis.set_major_locator(plt.MaxNLocator(6))
         annotate_from_stats(ax_h, df_stats, "Fig 1I", "Distance", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Distance (m)']))
     
     # Panel I: Total Port Entries
     ax_i = fig.add_subplot(gs_row4[2])
     add_subplot_label(ax_i, "I")
     if df_tmaze_entries is not None:
-        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Entries', 'Genotype', order=geno_order)
+        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Entries', 'Genotype', order=geno_order, ymax=100)
         ax_i.set_title('Total Port Entries', fontsize=8)
         ax_i.set_ylabel('Total Entries')
         annotate_from_stats(ax_i, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Entries']))
@@ -263,7 +265,9 @@ def plot_figure_1_behavior():
         plot_bar_scatter(ax_j, df_tmaze, 'Genotype', 'Percent_Alternations', 'Genotype', order=geno_order)
         ax_j.set_title('Spontaneous Alternation', fontsize=8)
         ax_j.set_ylabel('Percent Alternations')
-        ax_j.set_ylim(-1, 100)
+        # Percent alternation is bounded 0-100%; use fixed scale
+        ax_j.set_ylim(0, 100)
+        ax_j.set_yticks([0, 25, 50, 75, 100])
         annotate_from_stats(ax_j, df_stats, "Fig 1K", "Alternation", x1=0, x2=1, y_pos=90)
 
     save_current_fig('Figure_1_Behavior')
@@ -338,7 +342,7 @@ def plot_figure_2_physiology():
     # Row 3: F (FI Midpoint)          | G (Rheobase) | H (ISI traces) | I (ISI adaptation)
 
     fig = plt.figure(figsize=(6.89, 9.5))  # Slightly taller for larger traces
-    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[1.6, 0.6, 0.8], hspace=0.35)
+    outer_grid = gridspec.GridSpec(3, 1, height_ratios=[1.5, 0.6, 0.6], hspace=0.35)
 
     # ==========================================================
     # ROW 1: A | B | C
@@ -348,7 +352,7 @@ def plot_figure_2_physiology():
     # ==========================================================
     gs_row1 = gridspec.GridSpecFromSubplotSpec(
         1, 3, subplot_spec=outer_grid[0],
-        width_ratios=[0.33, 0.33, 0.34], wspace=0.35)
+        width_ratios=[0.34, 0.33, 0.33], wspace=0.4)
 
     # --- Panel A: Input Resistance traces (stacked) + bar ---
     gs_A = gridspec.GridSpecFromSubplotSpec(
@@ -374,11 +378,9 @@ def plot_figure_2_physiology():
     ax_a = fig.add_subplot(gs_A[1, :])
     if df_intrinsic is not None and 'Input_Resistance_MOhm' in df_intrinsic.columns:
         plot_bar_scatter(ax_a, df_intrinsic, 'Genotype', 'Input_Resistance_MOhm',
-                         'Genotype', order=['WT', 'I80T/+'])
+                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=300)
         ax_a.set_ylabel('Input Resistance (MΩ)', fontsize=7)
         ax_a.set_title('Input Resistance', fontsize=8)
-        ax_a.set_ylim(0, 400)
-        ax_a.set_yticks([100, 200, 300, 400])
         ax_a.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_a, df_stats, "Fig 2A", "Input Resistance",
@@ -411,10 +413,9 @@ def plot_figure_2_physiology():
     ax_b_bar = fig.add_subplot(gs_B[1, :])
     if df_intrinsic is not None and 'Voltage_sag' in df_intrinsic.columns:
         plot_bar_scatter(ax_b_bar, df_intrinsic, 'Genotype', 'Voltage_sag',
-                         'Genotype', order=['WT', 'I80T/+'])
+                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=30)
         ax_b_bar.set_ylabel('Voltage Sag (%)', fontsize=7)
         ax_b_bar.set_title('Voltage Sag', fontsize=8)
-        ax_b_bar.set_ylim(bottom=0)
         ax_b_bar.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_b_bar, df_stats, "Fig 2A", "Voltage Sag",
@@ -472,10 +473,9 @@ def plot_figure_2_physiology():
     ax_c_bar = fig.add_subplot(gs_C[1, :])
     if df_ap_ahp is not None and 'decay_area' in df_ap_ahp.columns:
         plot_bar_scatter(ax_c_bar, df_ap_ahp, 'Genotype', 'decay_area',
-                         'Genotype', order=['WT', 'I80T/+'])
+                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=60)
         ax_c_bar.set_ylabel('AHP Area\n(mV·ms)', fontsize=7)
         ax_c_bar.set_title('AHP Decay', fontsize=8)
-        ax_c_bar.set_ylim(bottom=0)
         ax_c_bar.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_c_bar, df_stats, "Fig 2E", "AHP Decay",
@@ -489,7 +489,7 @@ def plot_figure_2_physiology():
     # ==========================================================
     gs_row2 = gridspec.GridSpecFromSubplotSpec(
         1, 3, subplot_spec=outer_grid[1],
-        width_ratios=[0.45, 0.30, 0.25], wspace=0.4)
+        width_ratios=[0.34, 0.33, 0.33], wspace=0.4)
 
     # Panel D: FI traces stacked
     gs_d = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_row2[0], hspace=0.1)
@@ -577,21 +577,20 @@ def plot_figure_2_physiology():
         ax_e.text(0.5, 0.5, 'Curve Data Missing', ha='center', color='red')
 
     # ==========================================================
-    # ROW 3: G (Rheobase) | H (ISI traces) | I (ISI adaptation)
+    # ROW 3: G (Rheobase) | H (AP-ISI traces) | I (AP-ISI adaptation)
     # ==========================================================
     gs_row3 = gridspec.GridSpecFromSubplotSpec(
         1, 3, subplot_spec=outer_grid[2],
-        width_ratios=[0.25, 0.40, 0.35], wspace=0.4)
+        width_ratios=[0.33, 0.34, 0.33], wspace=0.4)
 
     # Panel F: F-I Midpoint
     ax_f = fig.add_subplot(gs_row2[2])
     add_subplot_label(ax_f, "F")
     if fi_midpoints_df is not None:
         plot_bar_scatter(ax_f, fi_midpoints_df, 'Genotype', 'FI_Midpoint',
-                         'Genotype', order=['WT', 'I80T/+'])
+                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=600)
         ax_f.set_ylabel('F-I Curve Midpoint (pA)')
         ax_f.set_title('F-I Midpoint', fontsize=8)
-        ax_f.set_ylim(bottom=0)
         ax_f.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_f, df_stats, 'Fig 2F', 'F-I Curve Midpoint',
@@ -605,10 +604,9 @@ def plot_figure_2_physiology():
     if df_ap_ahp is not None and 'Rheobase_Current' in df_ap_ahp.columns:
         plot_data = df_ap_ahp.dropna(subset=['Rheobase_Current'])
         plot_bar_scatter(ax_rheo, plot_data, 'Genotype', 'Rheobase_Current',
-                         'Genotype', order=['WT', 'I80T/+'])
+                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=600)
         ax_rheo.set_ylabel('Rheobase (pA)')
         ax_rheo.set_title('Rheobase', fontsize=8)
-        ax_rheo.set_ylim(bottom=0)
         ax_rheo.set_box_aspect(1)
         if df_stats is not None:
             annotate_from_stats(ax_rheo, df_stats, "Fig 2C", "Rheobase",
@@ -653,13 +651,13 @@ def plot_figure_2_physiology():
         ax_i.spines['top'].set_visible(False)
         ax_i.spines['right'].set_visible(False)
         ax_i.set_box_aspect(1)
+        apply_clean_yticks(ax_i)
         ax_i.legend(loc='upper left', frameon=False, fontsize=8)
     else:
         ax_i.text(0.5, 0.5, 'ISI Data Missing', ha='center', color='red')
         ax_i.set_title('Spike Rate Adaptation')
 
     save_current_fig('Figure_2_Physiology')
-
 
 
 # ==================================================================================================
@@ -742,6 +740,8 @@ def plot_figure_3_morphology():
     ax_basal.set_title('Basal Dendrites', fontsize=9)
     ax_basal.set_xlabel('Distance from Soma (μm)', fontsize=8)
     ax_basal.set_ylabel('Number of Intersections', fontsize=8)
+    ax_basal.set_ylim(bottom=0)
+    ax_basal.yaxis.set_major_locator(plt.MaxNLocator(nbins=5, integer=True))
     ax_basal.spines['top'].set_visible(False)
     ax_basal.spines['right'].set_visible(False)
     ax_basal.legend(frameon=False, loc='upper right')
@@ -752,6 +752,8 @@ def plot_figure_3_morphology():
     ax_apical.set_title('Apical Dendrites', fontsize=9)
     ax_apical.set_xlabel('Distance from Soma (μm)', fontsize=8)
     ax_apical.set_ylabel('Number of Intersections', fontsize=8)
+    ax_apical.set_ylim(bottom=0)
+    ax_apical.yaxis.set_major_locator(plt.MaxNLocator(nbins=5, integer=True))
     ax_apical.spines['top'].set_visible(False)
     ax_apical.spines['right'].set_visible(False)
     ax_apical.legend(frameon=False, loc='upper right')
@@ -862,16 +864,17 @@ def plot_figure_3_morphology():
         ax_f_basal.set_ylabel('Total Branch Length ($\mu$m)', fontsize=8)
         ax_f_basal.set_title('Basal', fontsize=8)
         ax_f_basal.set_xlabel('')
+        ax_f_basal.set_ylim(bottom=0)  # branch lengths cannot be negative
         
         # F2: Apical Branch Sum
         ax_f_apical = fig.add_subplot(gs_F[1])
         df_apical_props = df_dend_props[df_dend_props['Dendrite_Type'] == 'Apical']
         max_h = plot_bar_scatter(ax_f_apical, df_apical_props, 'Genotype', 'branch_sum', 'Genotype', order=['WT', 'I80T/+'])
         annotate_from_stats(ax_f_apical, df_stats, 'Fig 3F (Right)', 'Apical Total Branch Length', 0, 1, max_h)
-        
         ax_f_apical.set_ylabel('')
         ax_f_apical.set_title('Apical', fontsize=8)
         ax_f_apical.set_xlabel('')
+        ax_f_apical.set_ylim(bottom=0)
         
         # Panel G: Number of Terminal Branches
         # G1: Basal Terminal Branches
@@ -883,15 +886,16 @@ def plot_figure_3_morphology():
         ax_g_basal.set_ylabel('Number of Terminal Branches', fontsize=8)
         ax_g_basal.set_title('Basal', fontsize=8)
         ax_g_basal.set_xlabel('')
+        ax_g_basal.set_ylim(bottom=0)
         
         # G2: Apical Terminal Branches
         ax_g_apical = fig.add_subplot(gs_G[1])
         max_h = plot_bar_scatter(ax_g_apical, df_apical_props, 'Genotype', 'N_terminal_branches', 'Genotype', order=['WT', 'I80T/+'])
         annotate_from_stats(ax_g_apical, df_stats, 'Fig 3G (Right)', 'Apical Terminal Branches', 0, 1, max_h)
-        
         ax_g_apical.set_ylabel('')
         ax_g_apical.set_title('Apical', fontsize=8)
         ax_g_apical.set_xlabel('')
+        ax_g_apical.set_ylim(bottom=0)
     else:
         # Add placeholders if dendrite properties data is not available
         # These placeholders need to be created on actual axes, not just variables
@@ -919,21 +923,250 @@ def plot_figure_3_morphology():
     save_current_fig('Figure_3_Morphology')
 
 # ==================================================================================================
-# FIGURE 4: E:I BALANCE
+# FIGURE 4-6: E:I BALANCE
 # ==================================================================================================
 
-def plot_figure_4_EI():
+def plot_figure_4_Unitary_E_I_Breakdown():
     """
-    Figure 4: E:I Balance Across Three Pathways (ECIII/Perforant, CA3/Schaffer, SO/Basal)
+    Figure 4: Unitary E:I Breakdown
     
     Layout: 5 rows x 3 columns
-    - Row 1: WT example traces (ECIII | CA3 | SO)
-    - Row 2: I80T/+ example traces (legend centered below)
-    - Row 3 (C): Gabazine - WT vs I80T/+ overlaid
-    - Row 4 (D): Gabazine Supralinearity (WT black vs I80T/+ red)
-    - Row 5 (E): E:I imbalance (WT black vs I80T/+ red)
+    - Row 1: WT Unitary Breakdown (ECIII | CA3 | Basal)
+    - Row 2: I80T/+ Unitary Breakdown
+    - Row 3: Excitation Amplitudes (Gabazine) - only unitary
+    - Row 4: Inh (GABAA) Amplitudes (Estimated) - only unitary
+    - Row 5: Inh (GABAB) Area - only unitary
+
     """
-    print("\\n--- Generating Figure 4: E:I Balance (3 Pathways) ---")
+    print("\n--- Generating Figure 4: Unitary E:I Breakdown ---")
+    # Convert 17.5 cm to inches
+    fig_width = 17.5 / 2.54 
+    fig_height = 8.5 # Refined height for 4 rows
+    
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    
+    gs = fig.add_gridspec(5, 3,
+                         wspace=0.45, hspace=0.8,
+                         left=0.08, right=0.98,
+                         top=0.96, bottom=0.08,
+                         height_ratios=[1.2, 1, 1, 1, 1])
+    
+    # Load E:I traces and amplitudes
+    df_traces = pd.read_pickle('paper_data/E_I_data/E_I_traces_for_plotting.pkl')
+    df_amplitudes = pd.read_csv('paper_data/E_I_data/E_I_amplitudes.csv')
+
+    # Rename GNB1 -> I80T/+ for display
+    df_traces = rename_genotype(df_traces)
+    df_amplitudes = rename_genotype(df_amplitudes)
+
+    #Adding stats to specific subplots
+    panel_to_analysis = {
+        'B': ('Gabazine_Amplitude', 'WT_vs_GNB1'),
+        'C': ('Inhibition_Amplitude', 'WT_vs_GNB1'),
+        'D': ('GABAB_Area', 'WT_vs_GNB1')
+    }
+
+    #Pathways to do analysis on
+    pathways = [
+        ('ECIII (Perforant)', 'perforant', 'channel_1'),
+        ('CA3 Apical (Schaffer)', 'schaffer', 'channel_2'),
+        ('CA3 Basal', 'basal', 'Basal_Stratum_Oriens')
+    ]
+
+    # Load Significance Markers
+    #....TODO
+
+
+    ## ROW 1: Example Unitary Breakdown (Methodology)
+    # Only display ONE example (Perforant) and put labels to the right
+    ax_wt_perf = fig.add_subplot(gs[0, 0]) # Wider subplot for the trace + labels
+    add_subplot_label(ax_wt_perf, "A", fontsize=10, fontweight='bold')
+
+    #Add a row label for WT
+    ax_wt_perf.text(-0.2, 1, 'WT', rotation='vertical', va='center', ha='center', fontsize=12, fontweight='bold')
+
+    # Use WT as the example for methodology
+    plot_unitary_breakdown(ax_wt_perf, df_traces, 'WT', 'ECIII Input', annotate=True)
+    
+    # Hide the empty axes in Row 1 if any (we used 0:2, so only 2 is empty)
+    ax_wt_apical = fig.add_subplot(gs[0, 1])
+    #plot unitary traces without measurements 
+    plot_unitary_breakdown(ax_wt_apical, df_traces, 'WT', 'CA3 Apical Input', annotate=False)
+
+    ax_wt_basal = fig.add_subplot(gs[0, 2])
+    #plot unitary traces without measurements 
+    plot_unitary_breakdown(ax_wt_basal, df_traces, 'WT', 'CA3 Basal Input', annotate=False)
+
+    #ADD A SCALEBAR TO THE FIRST PLOT
+    add_scale_bar(ax_wt_perf, x_scale_ms=50, y_scale_mv=2, x_pos=0.05, y_pos=0.05) 
+
+    ## ROW 2: I80T/+ Unitary Breakdown
+    ax_mut_perf = fig.add_subplot(gs[1, 0]) # Wider subplot for the trace + labels
+    add_subplot_label(ax_mut_perf, "B", fontsize=10, fontweight='bold')
+    #Add a row label for I80T/+
+    ax_mut_perf.text(-0.2, 1, 'I80T/+', rotation='vertical', va='center', ha='center', fontsize=12, fontweight='bold')
+    # Use WT as the example for methodology
+    plot_unitary_breakdown(ax_mut_perf, df_traces, 'I80T/+', 'ECIII Input', annotate=False)
+
+    # Hide the empty axes in Row 1 if any (we used 0:2, so only 2 is empty)
+    ax_mut_apical = fig.add_subplot(gs[1, 1])
+    #plot unitary traces without measurements 
+    plot_unitary_breakdown(ax_mut_apical, df_traces, 'I80T/+', 'CA3 Apical Input', annotate=False)
+
+    ax_mut_basal = fig.add_subplot(gs[1, 2])
+    #plot unitary traces without measurements 
+    plot_unitary_breakdown(ax_mut_basal, df_traces, 'I80T/+', 'CA3 Basal Input', annotate=False)
+
+    #ADD A SCALEBAR TO THE SECOND ROW (I80T/+)
+    add_scale_bar(ax_mut_perf, x_scale_ms=50, y_scale_mv=2, x_pos=0.05, y_pos=0.05)
+
+    # -----------------------------------------------------------------------
+    # Helper: filter amplitudes to ISI=300, one pathway, rename genotype
+    # -----------------------------------------------------------------------
+    pathway_map_amp = {
+        'ECIII Input':      'Perforant',
+        'CA3 Apical Input': 'Schaffer',
+        'CA3 Basal Input':  'Basal_Stratum_Oriens',
+    }
+    pathway_labels = ['ECIII Input', 'CA3 Apical Input', 'CA3 Basal Input']
+
+    def get_unitary(df_amp, pathway_label, metric):
+        path_key = pathway_map_amp[pathway_label]
+        sub = df_amp[
+            (df_amp['ISI'] == 300) &
+            (df_amp['Pathway'] == path_key)
+        ][['Cell_ID', 'Genotype', metric]].dropna(subset=[metric]).copy()
+        sub = rename_genotype(sub)
+        return sub
+
+    ## ROW 3: Gabazine Amplitude (Excitation) at ISI=300
+    axs_row3 = []
+    for col, plabel in enumerate(pathway_labels):
+        ax = fig.add_subplot(gs[2, col])
+        axs_row3.append(ax)
+        sub = get_unitary(df_amplitudes, plabel, 'Gabazine_Amplitude')
+        plot_bar_scatter(ax, sub, 'Genotype', 'Gabazine_Amplitude', 'Genotype',
+                         order=['WT', 'I80T/+'], unique_col='Cell_ID')
+        if col == 0:
+            add_subplot_label(ax, 'C', fontsize=10, fontweight='bold')
+            ax.set_ylabel('EPSP Amplitude (mV)\n(No Inhibition)', fontsize=8)
+        else:
+            ax.set_ylabel('')
+        ax.set_xlabel('')
+        ax.set_title(plabel, fontsize=8)
+        ax.tick_params(axis='x', labelsize=7)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_ylim(bottom=0)
+
+    # Sync all three y-axes for Row 3 (Excitation)
+    ymax_r3 = max(ax.get_ylim()[1] for ax in axs_row3)
+    for ax in axs_row3:
+        ax.set_ylim(0, ymax_r3)
+        apply_clean_yticks(ax)
+
+    ## ROW 4: Estimated GABAA Inhibition Amplitude at ISI=300
+    axs_row4 = []
+    for col, plabel in enumerate(pathway_labels):
+        ax = fig.add_subplot(gs[3, col])
+        axs_row4.append(ax)
+        sub = get_unitary(df_amplitudes, plabel, 'Estimated_Inhibition_Amplitude')
+        plot_bar_scatter(ax, sub, 'Genotype', 'Estimated_Inhibition_Amplitude', 'Genotype',
+                         order=['WT', 'I80T/+'], unique_col='Cell_ID')
+        if col == 0:
+            add_subplot_label(ax, 'D', fontsize=10, fontweight='bold')
+            ax.set_ylabel('Estimated Inhibition\nAmplitude (mV)', fontsize=8)
+        else:
+            ax.set_ylabel('')
+        ax.set_xlabel('')
+        ax.set_title('')
+        ax.tick_params(axis='x', labelsize=7)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_ylim(top=0)  # values are negative; cap at 0
+
+    # Sync all three y-axes for Row 4 (GABAA - negative)
+    ymin_r4 = min(ax.get_ylim()[0] for ax in axs_row4)
+    for ax in axs_row4:
+        ax.set_ylim(ymin_r4, 0)
+        apply_clean_yticks(ax)
+
+    ## ROW 5: GABAB Decay Area at ISI=300 (stored as negative, plot as positive)
+    axs_row5 = []
+    for col, plabel in enumerate(pathway_labels):
+        ax = fig.add_subplot(gs[4, col])
+        axs_row5.append(ax)
+        sub = get_unitary(df_amplitudes, plabel, 'GABAB_Area')
+        plot_bar_scatter(ax, sub, 'Genotype', 'GABAB_Area', 'Genotype',
+                         order=['WT', 'I80T/+'], unique_col='Cell_ID')
+        if col == 0:
+            add_subplot_label(ax, 'E', fontsize=10, fontweight='bold')
+            ax.set_ylabel('Slow IPSP Area\n(mV·ms)', fontsize=8)
+        else:
+            ax.set_ylabel('')
+        ax.set_xlabel('')
+        ax.set_title('')
+        ax.tick_params(axis='x', labelsize=7)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_ylim(top=0)  # values are negative; cap at 0
+
+    # Sync only CA3 Apical (1) and CA3 Basal (2) y-axes for Row 5 (GABAB - negative)
+    ymin_r5_ca3 = min(axs_row5[1].get_ylim()[0], axs_row5[2].get_ylim()[0])
+    for ax in [axs_row5[1], axs_row5[2]]:
+        ax.set_ylim(ymin_r5_ca3, 0)   # cap top at 0 — no blank space above baseline
+        apply_clean_yticks(ax)
+    # ECIII scales independently but same top-cap rule
+    eciii_ax = axs_row5[0]
+    eciii_ax.set_ylim(eciii_ax.get_ylim()[0], 0)
+    apply_clean_yticks(eciii_ax)
+
+    # -----------------------------------------------------------------------
+    # Load stats and annotate significance brackets (drawn after ylims are set)
+    # -----------------------------------------------------------------------
+    stats_path = 'paper_data/E_I_data/Stats_Results_Figure_4.csv'
+    df_stats4 = pd.read_csv(stats_path) if os.path.exists(stats_path) else None
+
+    def annotate_fig4(ax, df_s, metric, pathway_key):
+        if df_s is None: return
+        row = df_s[(df_s['Metric'] == metric) & (df_s['Pathway'] == pathway_key)]
+        if row.empty: return
+        p = row.iloc[0]['P_Value']
+        ylo, yhi = ax.get_ylim()
+        # For positive values bracket above, for negative bracket below baseline
+        y_bracket = yhi * 0.9 if yhi > 0 else ylo * 0.9
+        draw_significance(ax, 0, 1, p, y_bracket, bracket=True)
+
+    pathway_keys = ['Perforant', 'Schaffer', 'Basal_Stratum_Oriens']
+    for col, (ax3, ax4, ax5, pk) in enumerate(zip(axs_row3, axs_row4, axs_row5, pathway_keys)):
+        annotate_fig4(ax3, df_stats4, 'Gabazine_Amplitude', pk)
+        annotate_fig4(ax4, df_stats4, 'Estimated_Inhibition_Amplitude', pk)
+        annotate_fig4(ax5, df_stats4, 'GABAB_Area', pk)
+
+    output_path = 'paper_figures/Figure_4_Unitary_E_I_Breakdown.png'
+    for ext in ['.png', '.pdf', '.svg']:
+        fig.savefig(output_path.replace('.png', ext), dpi=300, bbox_inches='tight')
+    print(f"✓ Saved Figure 4 to: {output_path}")
+    plt.close()
+
+
+
+# ==================================================================================================
+# FIGURE 4: E:I BALANCE
+# ==============================================================================
+
+def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI_frequency_dependence.png'):
+    """
+    Figure 5: Redigned E:I balance now across frequencies (ISIs)
+    
+    Layout: 5 rows x 3 columns
+    - Row 1: ISI 10 for WT 
+    - Row 2: ISI 10 for I80T/+
+    - Row 3: Excitation Amplitudes (Gabazine) - All ISIs
+    - Row 4: Inh (GABAA) Amplitudes (Estimated) - All ISIs
+    - Row 5: Inh (GABAB) Area - All ISIs
+    """
+    print("\n--- Generating Figure 5: E:I Balance Redesign ---")
     setup_publication_style()
     
     # Load E:I traces and amplitudes
@@ -944,253 +1177,252 @@ def plot_figure_4_EI():
     df_traces = rename_genotype(df_traces)
     df_amplitudes = rename_genotype(df_amplitudes)
     
-    # Load statistics from corrected R scripts (condition-specific corrections)
-    
-    # # EI_Amplitudes Genotype comparison (corrected within condition)
-    # stats_genotype_anova = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Genotype_ANOVA.csv'
-    # stats_genotype_posthoc = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Genotype_PostHoc.csv'
-    # df_stats_genotype_anova = None
-    # df_stats_genotype_posthoc = None
-    # if os.path.exists(stats_genotype_anova):
-    #     df_stats_genotype_anova = pd.read_csv(stats_genotype_anova)
-    #     print(f"✓ Loaded EI_Amplitudes Genotype ANOVA")
-    # if os.path.exists(stats_genotype_posthoc):
-    #     df_stats_genotype_posthoc = pd.read_csv(stats_genotype_posthoc)
-    #     print(f"✓ Loaded EI_Amplitudes Genotype Post-Hoc")
-    
-    # # EI_Amplitudes Drug effect (Control vs Gabazine, corrected within genotype)
-    # stats_drug_anova = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Drug_ANOVA.csv'
-    # stats_drug_posthoc = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_Drug_PostHoc.csv'
-    # df_stats_drug_anova = None
-    # df_stats_drug_posthoc = None
-    # if os.path.exists(stats_drug_anova):
-    #     df_stats_drug_anova = pd.read_csv(stats_drug_anova)
-    #     print(f"✓ Loaded EI_Amplitudes Drug ANOVA")
-    # if os.path.exists(stats_drug_posthoc):
-    #     df_stats_drug_posthoc = pd.read_csv(stats_drug_posthoc)
-    #     print(f"✓ Loaded EI_Amplitudes Drug Post-Hoc")
-    
-    # # EI_Amplitudes Gabazine vs Expected comparison
-    # stats_gab_expected_anova = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_GabazineVsExpected_ANOVA.csv'
-    # stats_gab_expected_posthoc = 'paper_data/E_I_data/Figure_4_EI_Amplitudes_GabazineVsExpected_PostHoc.csv'
-    # df_stats_gab_expected_anova = None
-    # df_stats_gab_expected_posthoc = None
-    # if os.path.exists(stats_gab_expected_anova):
-    #     df_stats_gab_expected_anova = pd.read_csv(stats_gab_expected_anova)
-    #     print(f"✓ Loaded EI_Amplitudes GabazineVsExpected ANOVA")
-    # if os.path.exists(stats_gab_expected_posthoc):
-    #     df_stats_gab_expected_posthoc = pd.read_csv(stats_gab_expected_posthoc)
-    #     print(f"✓ Loaded EI_Amplitudes GabazineVsExpected Post-Hoc")
-    
-    # # EI_Supralinearity stats
-    # stats_supralin_anova = 'paper_data/E_I_data/Figure_4_EI_Supralinearity_ANOVA.csv'
-    # stats_supralin_posthoc = 'paper_data/E_I_data/Figure_4_EI_Supralinearity_PostHoc.csv'
-    # df_stats_supralin_anova = None
-    # df_stats_supralin_posthoc = None
-    # if os.path.exists(stats_supralin_anova):
-    #     df_stats_supralin_anova = pd.read_csv(stats_supralin_anova)
-    #     print(f"✓ Loaded EI_Supralinearity ANOVA")
-    # if os.path.exists(stats_supralin_posthoc):
-    #     df_stats_supralin_posthoc = pd.read_csv(stats_supralin_posthoc)
-    #     print(f"✓ Loaded EI_Supralinearity Post-Hoc")
-    
-    # # EI_Imbalance stats
-    # stats_imbalance_anova = 'paper_data/E_I_data/Figure_4_EI_Imbalance_ANOVA.csv'
-    # stats_imbalance_posthoc = 'paper_data/E_I_data/Figure_4_EI_Imbalance_PostHoc.csv'
-    # df_stats_imbalance_anova = None
-    # df_stats_imbalance_posthoc = None
-    # if os.path.exists(stats_imbalance_anova):
-    #     df_stats_imbalance_anova = pd.read_csv(stats_imbalance_anova)
-    #     print(f"✓ Loaded EI_Imbalance ANOVA")
-    # if os.path.exists(stats_imbalance_posthoc):
-    #     df_stats_imbalance_posthoc = pd.read_csv(stats_imbalance_posthoc)
-    #     print(f"✓ Loaded EI_Imbalance Post-Hoc")
-    
-    # if df_traces is None or df_traces.empty:
-    #     print("❌ Error: Could not load E:I traces")
-    #     return
-    
-    # if df_amplitudes is None or df_amplitudes.empty:
-    #     print("❌ Error: Could not load E:I amplitudes")
-    #     return
-    
     # Convert 17.5 cm to inches
-    fig_width = 17.5 / 2.54  # = 6.89 inches
-    fig_height = 7.5  # inches (reduced)
+    fig_width = 17.5 / 2.54 
+    fig_height = 10.5  # 4 rows: 1 example + 3 quantification
     
     fig = plt.figure(figsize=(fig_width, fig_height))
     
-    # Create 5×3 grid
-    gs = fig.add_gridspec(5, 3,
-                         wspace=0.35, hspace=0.65,
+    gs = fig.add_gridspec(4, 3,
+                         wspace=0.45, hspace=0.9,
                          left=0.08, right=0.98,
-                         top=0.96, bottom=0.05,
-                         height_ratios=[1, 1, 1.2, 1, 1])
+                         top=0.96, bottom=0.08,
+                         height_ratios=[1.1, 1, 1, 1])
     
-    # Define pathways
+    # Load Significance Markers
+    base_stats_dir = 'paper_data/E_I_data/'
+    markers_path = os.path.join(base_stats_dir, 'Figure_5_6_Significance_Markers.csv')
+    df_markers = pd.read_csv(markers_path) if os.path.exists(markers_path) else None
+    if df_markers is not None:
+        print(f"✓ Loaded significance markers from: {markers_path}")
+    else:
+        print(f"⚠ Markers file not found: {markers_path}")
+
+    panel_to_analysis = {
+        'C': ('Gabazine_Amplitude', 'WT_vs_GNB1'),
+        'D': ('Inhibition_Amplitude', 'WT_vs_GNB1'),
+        'E': ('GABAB_Area', 'WT_vs_GNB1')
+    }
+
     pathways = [
-        ('ECIII', 'perforant', 'channel_1'),
-        ('CA3', 'schaffer', 'channel_2'),
-        ('SO', 'basal', 'Basal_Stratum_Oriens')
+        ('ECIII (Perforant)', 'perforant', 'channel_1'),
+        ('CA3 Apical (Schaffer)', 'schaffer', 'channel_2'),
+        ('CA3 Basal', 'basal', 'Basal_Stratum_Oriens')
     ]
     
-    # =========================================================================
-    # ROW 1: WT Example Traces
-    # =========================================================================
-    for col, (label, pathway, channel) in enumerate(pathways):
-        ax = fig.add_subplot(gs[0, col])
-        if col == 0:
-            add_subplot_label(ax, "A", fontsize=8, fontweight='bold')
-        
-        if pathway == 'basal':
-            plot_ei_averages(ax, df_traces, 'WT', 10, f'{label} - WT', 
-                           add_legend=False, pathway=pathway)
-        else:
-            plot_ei_averages(ax, df_traces, 'WT', 10, f'{label} - WT',
-                           add_legend=False, pathway=pathway)
-        
-        if col > 0:
-            ax.set_title(label, fontsize=8, fontweight='bold', loc='center')
-    
-    # =========================================================================
-    # ROW 2: GNB1 Example Traces
-    # =========================================================================
-    for col, (label, pathway, channel) in enumerate(pathways):
+    # ROW 1 (A): Two ECIII example traces side-by-side
+    # Left: ISI=50ms with annotations  |  Right: ISI=10ms, no annotations
+    print("  Row 1: WT example traces (ECIII, 50ms | 10ms)")
+    from matplotlib.gridspec import GridSpecFromSubplotSpec
+    gs_row1 = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[0, :],
+                                      wspace=0.05, hspace=0)
+
+    ax_50 = fig.add_subplot(gs_row1[0, 0])
+    plot_example_ISI_trace(ax_50, df_traces, df_amplitudes, 50, 'ECIII Input', annotate=True)
+    add_subplot_label(ax_50, 'A', x=-0.05)
+    ax_50.set_title('ECIII — ISI 50 ms', fontsize=9, fontweight='bold')
+
+    ax_10 = fig.add_subplot(gs_row1[0, 1])
+    plot_example_ISI_trace(ax_10, df_traces, df_amplitudes, 10, 'ECIII Input', annotate=False)
+    ax_10.set_title('ECIII — ISI 10 ms', fontsize=9, fontweight='bold')
+    # Legend on the right panel
+    ax_10.legend(frameon=False, fontsize=7, loc='lower right',
+                 bbox_to_anchor=(1.02, -0.08), ncol=1)
+
+    # ROW 2 (B): Excitation Amplitudes — shared Y-axis anchored to ECIII (col 0)
+    ylims_exc = []
+    axs_exc = []
+    for col, (label, pathway_key, channel) in enumerate(pathways):
         ax = fig.add_subplot(gs[1, col])
+        axs_exc.append(ax)
         if col == 0:
-            add_subplot_label(ax, "B", fontsize=8, fontweight='bold')
-        
-        if pathway == 'basal':
-            plot_ei_averages(ax, df_traces, 'I80T/+', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
-        else:
-            plot_ei_averages(ax, df_traces, 'I80T/+', 10, f'{label} - I80T/+', pathway=pathway, add_legend=False)
-    
-    # Add custom legend CENTERED below row 2
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], color='dimgray', lw=1.5, label='Control: Measured - With Inhibition'),
-        Line2D([0], [0], color='black', lw=1.5, label='Gabazine: Measured - No Inhibition'),
-        Line2D([0], [0], color='gray', lw=1.5, linestyle='--', label='Expected - Linear Summation')
-    ]
-    
-    fig.legend(handles=legend_elements, loc='upper center',  
-              bbox_to_anchor=(0.5, 0.62), ncol=3, frameon=False, fontsize=7)
-    
-    # =========================================================================
-    # ROW 3 (C): Gabazine - WT vs GNB1 Overlaid
-    # =========================================================================
-    ymin_r3, ymax_r3 = 0, 0
-    
-    if 'Gabazine_Amplitude' in df_amplitudes.columns:
-        grouped = df_amplitudes.groupby(['Genotype', 'Pathway', 'ISI'])['Gabazine_Amplitude'].agg(['mean', 'sem'])
-        upper = (grouped['mean'] + grouped['sem']).max()
-        ymax_r3 = upper * 1.1
-        ymin_r3 = 0
-    
-    for col, (label, pathway, channel) in enumerate(pathways):
+            add_subplot_label(ax, "B", fontsize=10, fontweight='bold')
+        pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer',
+                        'basal': 'Basal_Stratum_Oriens'}[pathway_key]
+        ylim = plot_metric_comparison(ax, df_amplitudes, pathway_name,
+                                      'Gabazine_Amplitude', 'Gabazine Amplitude (mV)',
+                                      add_legend=False)
+        # Add Markers
+        analysis, comp = panel_to_analysis['C']
+        annotate_with_sig_markers(ax, df_markers, analysis, pathway_name, comp, range(5))
+        ylims_exc.append(ylim)
+        if col > 0:
+            ax.set_ylabel('')
+
+    # Enforce shared Y-axis: 0 to 25 mV for all panels
+    for ax in axs_exc:
+        ax.set_ylim(0, 25)
+
+    # ROW 4: Inh (GABAA) Amplitudes
+    # ROW 3 (C): Inh (GABAA) Amplitudes
+    ylims_inh_a = []
+    axs_inh_a = []
+    for col, (label, pathway_key, channel) in enumerate(pathways):
         ax = fig.add_subplot(gs[2, col])
+        axs_inh_a.append(ax)
         if col == 0:
-            add_subplot_label(ax, "C", fontsize=8, fontweight='bold')
-        
+            add_subplot_label(ax, "C", fontsize=10, fontweight='bold')
         pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
-                       'basal': 'Basal_Stratum_Oriens'}[pathway]
+                        'basal': 'Basal_Stratum_Oriens'}[pathway_key]
+        ylim = plot_metric_comparison(ax, df_amplitudes, pathway_name, 
+                                     'Estimated_Inhibition_Amplitude', 'Inh (GABAA) (mV)')
         
-        # Plot both WT and GNB1 overlaid - use Between-Genotype ANOVA stats
-        plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name)
+        # Add Markers
+        analysis, comp = panel_to_analysis['D']
+        annotate_with_sig_markers(ax, df_markers, analysis, pathway_name, comp, range(5))
         
-        ax.set_ylim(ymin_r3, ymax_r3)
-        if col > 0:
-            ax.set_ylabel('')
+        ylims_inh_a.append(ylim)
+        if col > 0: ax.set_ylabel('')
+        
+    # Sync Y-axis for ALL pathways in Row 3 (Panel C)
+    max_y = max([yl[1] for yl in ylims_inh_a if yl is not None])
+    min_y = min([yl[0] for yl in ylims_inh_a if yl is not None])
+    for ax in axs_inh_a:
+        ax.set_ylim(min_y, max_y)
 
-    # =========================================================================
-    # ROW 4 (D): Gabazine Supralinearity
-    # =========================================================================
-    ymin_r4, ymax_r4 = -2, 2
-    if 'Gabazine_Supralinearity' in df_amplitudes.columns:
-        grouped = df_amplitudes.groupby(['Genotype', 'Pathway', 'ISI'])['Gabazine_Supralinearity'].agg(['mean', 'sem'])
-        upper = (grouped['mean'] + grouped['sem']).max()
-        lower = (grouped['mean'] - grouped['sem']).min()
-        
-        span = upper - lower
-        ymax_r4 = upper + span * 0.1
-        ymin_r4 = lower - span * 0.1
-        
-    for col, (label, pathway, channel) in enumerate(pathways):
+    # ROW 4 (D): Inh (GABAB) Area
+    ylims_inh_b = []
+    axs_inh_b = []
+    for col, (label, pathway_key, channel) in enumerate(pathways):
         ax = fig.add_subplot(gs[3, col])
+        axs_inh_b.append(ax)
         if col == 0:
-            add_subplot_label(ax, "D", fontsize=8, fontweight='bold')
-        
+            add_subplot_label(ax, "D", fontsize=10, fontweight='bold')
         pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
-                       'basal': 'Basal_Stratum_Oriens'}[pathway]
-        # Use Supralinearity/EI stats
-        plot_metric_comparison(ax, df_amplitudes, pathway_name, 
-                             'Gabazine_Supralinearity', 'Supralinearity (mV)',
-                             add_legend=False)
+                        'basal': 'Basal_Stratum_Oriens'}[pathway_key]
+        ylim = plot_metric_comparison(ax, df_amplitudes, pathway_name, 
+                                     'GABAB_Area', 'Slow IPSP Area (mV·ms)')
         
-        ax.set_ylim(ymin_r4, ymax_r4)
-        if col > 0:
-            ax.set_ylabel('')
+        # Add Markers
+        analysis, comp = panel_to_analysis['E']
+        annotate_with_sig_markers(ax, df_markers, analysis, pathway_name, comp, range(5))
+        
+        ylims_inh_b.append(ylim)
+        if col > 0: ax.set_ylabel('')
+        
+    # Sync Y-axis for ALL pathways in Row 4 (Panel D) — cap top at 0
+    max_y = 0  # GABAB area is always negative; force top tick at 0
+    min_y = min([yl[0] for yl in ylims_inh_b if yl is not None])
+    for ax in axs_inh_b:
+        ax.set_ylim(min_y, max_y)
+        apply_clean_yticks(ax)
+
+    # Save multiple formats
+    for ext in ['.png', '.pdf', '.svg']:
+        fig.savefig(output_path.replace('.png', ext), dpi=300, bbox_inches='tight')
     
-    # =========================================================================
-    # ROW 5 (E): E:I Imbalance
-    # =========================================================================
-    ymin_r5, ymax_r5 = 0, 1.2
-    if 'E_I_Imbalance' in df_amplitudes.columns:
-        grouped = df_amplitudes.groupby(['Genotype', 'Pathway', 'ISI'])['E_I_Imbalance'].agg(['mean', 'sem'])
-        upper = (grouped['mean'] + grouped['sem']).max()
-        lower = (grouped['mean'] - grouped['sem']).min()
-        
-        span = upper - lower
-        ymax_r5 = upper + span * 0.1
-        ymin_r5 = max(0, lower - span * 0.1)
+    print(f"✓ Figure 5 saved to: {output_path}")
+    plt.close()
 
-    for col, (label, pathway, channel) in enumerate(pathways):
-        ax = fig.add_subplot(gs[4, col])
-        if col == 0:
-            add_subplot_label(ax, "E", fontsize=8, fontweight='bold')
-        
-        pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
-                       'basal': 'Basal_Stratum_Oriens'}[pathway]
-        # Use Supralinearity/EI stats
-        plot_metric_comparison(ax, df_amplitudes, pathway_name,
-                             'E_I_Imbalance', 'E:I Imbalance',
-                             add_legend=False)
-                             
-        ax.set_ylim(ymin_r5, ymax_r5)
-        if col > 0:
-            ax.set_ylabel('')
-    
-    save_current_fig('Figure_4_EI')
 
-# ==================================================================================================
-
-# ==================================================================================================
-# FIGURE 6: DENDRITIC EXCITABILITY
-# ==================================================================================================
-
-def plot_figure_6_dendritic():
+def plot_figure_6_Supralinear_E_I():
     """
-    Figure 6: Dendritic Excitability (Restructured)
+    Figure 6: Supralinearity Across ISIs
+    Row A: WT 10ms ISI Traces (Measured, Gabazine, Expected)
+    Row B: I80T/+ 10ms ISI Traces (Measured, Gabazine, Expected)
+    Row C: GABAB Area Quantification (Unitary 300ms)
+    Row D: Baclofen Effects (Diagram, Traces, Quantification)
+    Row E: Gabazine Supralinearity Quantification
+    """
+    print("\n--- Generating Figure 6: Supralinearity ---")
+    setup_publication_style()
+    
+    # Load Primary Datasets
+    # Unified dataset ensures N-counts are consistent with Figure 4
+    df_amplitudes = pd.read_csv('paper_data/E_I_data/E_I_amplitudes.csv')
+    df_amplitudes = rename_genotype(df_amplitudes)
+    
+    # Statistics Markers (Unified Figure 4/5 Stats)
+    markers_path = 'paper_data/E_I_data/Figure_5_6_Significance_Markers.csv'
+    df_markers = pd.read_csv(markers_path) if os.path.exists(markers_path) else None
+    
+    # Traces Dataframe (Calculated during E-I export)
+    df_traces = pd.read_pickle('paper_data/E_I_data/E_I_traces_for_plotting.pkl')
+    df_traces = rename_genotype(df_traces)
+    
+    # Layout: 3 rows
+    fig = plt.figure(figsize=(7.5, 8))
+    gs = fig.add_gridspec(3, 3, hspace=0.8, wspace=0.35, 
+                         left=0.08, right=0.98, top=0.95, bottom=0.1,
+                         height_ratios=[1, 1, 1])
+    
+    pathways = [
+        ('ECIII Input', 0, 'Perforant'),
+        ('CA3 Apical Input', 1, 'Schaffer'),
+        ('CA3 Basal Input', 2, 'Basal_Stratum_Oriens'),
+    ]
+
+    # ROW 1 (A): WT 10ms traces
+    print("  Row 1: WT traces")
+    for col, (pathway_label, _, _) in enumerate(pathways):
+        ax = fig.add_subplot(gs[0, col])
+        plot_10ms_ISI_breakdown(ax, df_traces, 'WT', pathway_label)
+        if col == 0:
+            add_subplot_label(ax, 'A', x=-0.2)
+            ax.text(-0.35, 0.5, 'WT', transform=ax.transAxes, ha='right', va='center', fontweight='bold', fontsize=10)
+
+    # ROW 2 (B): I80T/+ 10ms traces
+    print("  Row 2: Mutant traces")
+    for col, (pathway_label, _, _) in enumerate(pathways):
+        ax = fig.add_subplot(gs[1, col])
+        plot_10ms_ISI_breakdown(ax, df_traces, 'I80T/+', pathway_label)
+        if col == 0:
+            add_subplot_label(ax, 'B', x=-0.2)
+            ax.text(-0.35, 0.5, 'I80T/+', transform=ax.transAxes, ha='right', va='center', fontweight='bold', fontsize=10)
+        if col == 2:
+            ax.legend(frameon=False, fontsize=6.5, loc='lower center',
+                      bbox_to_anchor=(0.5, -0.55), ncol=2)
+
+    # ROW 3: Supralinearity (C, D, E)
+    print("  Row 3: Supralinearity")
+    ylims_sup = []
+    axs_sup = []
+    for col, (pathway_label, _, pathway_match) in enumerate(pathways):
+        ax = fig.add_subplot(gs[2, col])
+        axs_sup.append(ax)
+        label = chr(ord('C') + col)
+        ylim = plot_metric_comparison(ax, df_amplitudes, pathway_match, 'Gabazine_Supralinearity', 'Supralinearity (mV)', add_legend=(col==2))
+        add_subplot_label(ax, label)
+        ylims_sup.append(ylim)
+        if df_markers is not None:
+            annotate_with_sig_markers(ax, df_markers, 'Gabazine_Supralinearity', pathway_match, 'WT_vs_GNB1', range(5))
+        if col > 0: ax.set_ylabel('')
+
+    # Sync Y-axis for ALL Supralinearity pathways
+    max_y = max(yl[1] for yl in ylims_sup if yl is not None)
+    min_y = min(yl[0] for yl in ylims_sup if yl is not None)
+    for ax in axs_sup:
+        ax.set_ylim(min_y, max_y)
+        apply_clean_yticks(ax)
+
+    save_current_fig('Figure_6_Supralinear_E_I')
+
+# ==============================================================================
+# FIGURE 7: DENDRITIC EXCITABILITY
+# ==============================================================================
+
+def plot_figure_7_dendritic():
+    """
+    Figure 7: Dendritic Excitability (Restructured)
     
     Panel A (Rows 1-2): Raw Theta Burst traces (WT vs I80T/+) for ECIII, CA3, Both.
     Panel B (Rows 3-4): Processed (from Pickle) + Expected traces (WT vs I80T/+).
-    Panel C (Row 5): Plateau Area bar plots
-    Panel D (Row 6): Single WT Example - Difference Traces
-    Panel E (Row 7): Averaged Supralinearity Traces
-    Panel F (Row 8): Spike Rate Across Theta Cycles
+    Panel C (Row 5): Averaged Supralinearity Traces
+    Panel D (Row 6): Supralinear Total AUC bar plots
+    Panel E (Row 7): Plateau Area bar plots
     """
     
-    print("\\n--- Generating Figure 6: Dendritic Excitability ---")
+    print("\n--- Generating Figure 7: Dendritic Excitability ---")
     setup_publication_style()
     
-    # Load AUC Data for Panel F (needed for filtering inside helper)
+    # Load AUC Data for Panel D (needed for filtering inside helper)
     auc_data_path = os.path.join('paper_data', 'supralinearity', 'Supralinear_AUC_Total.csv')
     df_auc_total = None
     if os.path.exists(auc_data_path):
         df_auc_total = pd.read_csv(auc_data_path)
     
     # PREPARE DATA (Logic moved to plotting_utils)
-    raw_data, processed_stats, plateau_df, df_auc_total, supralin_traces = prepare_figure_6_data(df_auc_total)
+    raw_data, processed_stats, plateau_df, df_auc_total, supralin_traces = prepare_figure_7_data(df_auc_total)
 
     # Rename GNB1 -> I80T/+ for display
     plateau_df = rename_genotype(plateau_df)
@@ -1204,267 +1436,192 @@ def plot_figure_6_dendritic():
     raw_start_idx = int(start_ms * acq_freq / 1000)   # 8000
     raw_end_idx = int(end_ms * acq_freq / 1000)        # 30000
     # Panel B: processed_stats already sliced in prepare_figure_6_data (pre-cropped traces)
-    # plot_theta_averaged_traces only uses (end_idx - start_idx) for time axis length
     panel_b_start = 0
     panel_b_end = int((end_ms - start_ms) * acq_freq / 1000)  # 22000
 
     # 4. Create Figure
     # -------------------------------------------------------------------------
-    fig = plt.figure(figsize=(6.89, 11))
-    gs = fig.add_gridspec(8, 3, hspace=0.8, wspace=0.3)
+    fig = plt.figure(figsize=(6.93, 10)) # Exact 17.6 cm width
+    gs = fig.add_gridspec(7, 3, hspace=0.6, wspace=0.35, 
+                         height_ratios=[1, 1, 1, 1, 1.4, 1.1, 1.4])
     
     cols = ['Perforant', 'Schaffer', 'Both']
     col_titles = ['ECIII (Perforant)', 'CA3 (Schaffer)', 'Both Pathways']
     
-    # 5. Plot Panels Using Modular Functions
+    # 5. Plot Panels Using Modular Functions (New Order: A, B, E -> C, C -> D, D -> E)
     # -------------------------------------------------------------------------
     
-    # Panel A: Raw Traces (NOT pre-cropped)
-    plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq, raw_start_idx, raw_end_idx)
+    # Panel A: Raw Traces (Rows 0-1)
+    plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq, raw_start_idx, raw_end_idx, start_row=0, label="A")
     
-    # Panel B: Averaged + Expected Traces (pre-sliced in prepare_figure_6_data)
-    plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq, panel_b_start, panel_b_end)
-
-    # Panel C: Plateau Area Bar Plots
-    # Panel C: Plateau Area Bar Plots
-    stats_path = os.path.join('paper_data', 'Plateau_data', 'Stats_Results_Figure_6.csv')
+    # Panel B: Averaged + Expected Traces (Rows 2-3)
+    plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq, panel_b_start, panel_b_end, start_row=2, label="B")
+    
+    # Panel C: Plateau Area Bar Plots (Row 4) - MOVED FROM E TO C
+    stats_path = os.path.join('paper_data', 'Plateau_data', 'Stats_Results_Figure_7.csv')
     df_stats = pd.read_csv(stats_path) if os.path.exists(stats_path) else None
     
     if plateau_df is not None and not plateau_df.empty:
-        plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats)
+        plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats, start_row=4, label="C")
     else:
-        ax_c = fig.add_subplot(gs[4, :])
-        add_subplot_label(ax_c, "C")
-        ax_c.text(0.5, 0.5, "Plateau data not found (or empty)", ha='center', va='center')
-        ax_c.axis('off')
+        ax_c_bar = fig.add_subplot(gs[4, :])
+        add_subplot_label(ax_c_bar, "C")
+        ax_c_bar.text(0.5, 0.5, "Plateau data missing", ha='center', va='center')
+        ax_c_bar.axis('off')
 
-    # Panel D: Single WT Example
-    # Traces are pre-cropped to start at 400ms, so start_idx=0
-    # end_idx = (1500ms - 400ms) * 20 samples/ms = 22000
-    start_idx_d = 0
-    end_idx_d = int((1500 - 400) * acq_freq / 1000)
-    
-    # supralin_traces is already loaded via prepare_figure_6_data
-    
+    # Panel D: Averaged Supralinearity Traces (Row 5) - MOVED FROM C TO D
     master_df_temp = pd.read_csv('master_df.csv', low_memory=False)
-    plot_example_difference_traces(fig, gs, supralin_traces, master_df_temp, start_idx_d, end_idx_d)
-
-    # Panel E: Averaged Supralinearity Traces
     if supralin_traces:
-        plot_averaged_difference_traces(fig, gs, supralin_traces, master_df_temp, start_idx_d, end_idx_d)
+        plot_averaged_difference_traces(fig, gs, supralin_traces, master_df_temp, 
+                                        panel_b_start, panel_b_end, start_row=5, label="D")
     else:
-        ax_e = fig.add_subplot(gs[6, :])
-        add_subplot_label(ax_e, "E")
-        ax_e.text(0.5, 0.5, "Supralinearity traces not found", ha='center', va='center')
-        ax_e.axis('off')
+        ax_d_trace = fig.add_subplot(gs[5, :])
+        add_subplot_label(ax_d_trace, "D")
+        ax_d_trace.text(0.5, 0.5, "Difference traces not found", ha='center', va='center')
+        ax_d_trace.axis('off')
 
-    # Panel F: Supralinear Total AUC (Bar plot like Panel C)
-    # df_auc_total is already loaded and filtered above to match Panel C cells
-    supralin_stats_path = os.path.join('paper_data', 'Plateau_data', 'Stats_Results_Figure_6.csv')
-    
+    # Panel E: Supralinear Total AUC (Row 6) - MOVED FROM D TO E
+    supralin_stats_path = os.path.join('paper_data', 'Plateau_data', 'Stats_Results_Figure_7.csv')
     if df_auc_total is not None and not df_auc_total.empty:
         df_stats_full = pd.read_csv(supralin_stats_path) if os.path.exists(supralin_stats_path) else None
-        plot_supralinear_auc_bars_fig6(fig, gs, df_auc_total, df_stats_full)
+        plot_supralinear_auc_bars_fig6(fig, gs, df_auc_total, df_stats_full, start_row=6, label="E")
+        # Clamp all three AUC panels to ymin=-20 so scale is compact
+        for col in range(3):
+            _ax = fig.axes[-(3 - col)]   # last 3 axes added by the function
+            _, _top = _ax.get_ylim()
+            _ax.set_ylim(-20, _top)
+            apply_clean_yticks(_ax)
     else:
-        ax_f = fig.add_subplot(gs[7, :])
-        add_subplot_label(ax_f, "F")
-        ax_f.text(0.5, 0.5, "Supralinearity AUC data not found", ha='center', va='center')
-        ax_f.axis('off')
+        ax_e_auc = fig.add_subplot(gs[6, :])
+        add_subplot_label(ax_e_auc, "E")
+        ax_e_auc.text(0.5, 0.5, "AUC data not found", ha='center', va='center')
+        ax_e_auc.axis('off')
 
-    save_current_fig('Figure_6_Dendritic')
+    save_current_fig('Figure_7_Dendritic')
 
 # ==================================================================================================
-# FIGURE 6: GIRK Channel Analysis (ML297 / ETX Effects)
+# FIGURE 8: GIRK Channel Analysis (ML297 / ETX Effects)
 # ==================================================================================================
 
-def plot_figure_7_GIRK():
+def plot_figure_8_GIRK():
     """
-    Figure 7: GIRK Channel Analysis (ML297 / ETX Effects)
-    New Layout (2 Rows):
-    Panel A: ML297 Traces (WT/I80T/+) + Delta Quantification
-    Panel B: ETX Traces (WT/I80T/+) + Delta Quantification
+    Figure 8: GIRK Channel Analysis & GABAB Integration
+    Row 1: A (Diagram placeholder), B/C (Baclofen Vm traces & Delta Vm)
+    Row 2: Unitary ML297 (D/E Traces, F Delta Area)
+    Row 3: GIRK ML297 Plateau Suppression (G/H Traces, I Delta)
+    Row 4: GIRK ETX Plateau Suppression (J/K Traces, L Delta)
     """
-    print("\n--- Generating Figure 7: GIRK Channel Analysis ---")
+    print("\n--- Generating Figure 8: GIRK and GABAB Analysis (Restructured) ---")
     setup_publication_style()
     
-    # Load Delta Data
-    delta_csv_path = 'paper_data/Plateau_data/Plateau_Delta_GIRK.csv'
-    df_delta = None
-    if os.path.exists(delta_csv_path):
-        df_delta = pd.read_csv(delta_csv_path)
-        # Rename GNB1 -> I80T/+ for display
-        df_delta = rename_genotype(df_delta)
-    else:
-        print("⚠ Warning: Plateau_Delta_GIRK.csv not found. Run analysis script.")
+    # Data Paths
+    unitary_traces_path = 'paper_data/Plateau_data/Figure8_Unitary_Traces.pkl'
+    unitary_delta_path = 'paper_data/Plateau_data/GIRK_Unitary_GABAB_Deltas.csv'
+    
+    baclofen_traces_path = 'paper_data/gabab_analysis/Baclofen_Vm_Example_Traces.pkl'
+    baclofen_vm_path = 'paper_data/gabab_analysis/Baclofen_Vm_Change.csv'
+    
+    plateau_delta_path = 'paper_data/Plateau_data/Plateau_Delta_GIRK.csv'
+    plateau_traces_path = 'paper_data/Plateau_data/All_Plateau_Traces.pkl'
+    
+    stats_path = 'paper_data/Plateau_data/Stats_Results_Figure_8.csv'
+    df_stats = pd.read_csv(stats_path) if os.path.exists(stats_path) else None
 
-    # Load Stats
-    stats_path = 'paper_data/Plateau_data/Stats_Results_Figure_7.csv'
-    df_stats = None
-    if os.path.exists(stats_path):
-        df_stats = pd.read_csv(stats_path)
+    # Figure Setup — 4 rows
+    fig = plt.figure(figsize=(7.5, 11))
+    gs = fig.add_gridspec(4, 1, hspace=0.45, left=0.08, right=0.97, top=0.98, bottom=0.04)
+
+    # ------------------------------------------------------------------
+    # ROW 1: GIRK Basics (Baclofen)
+    # ------------------------------------------------------------------
+    print("  Row 1: GIRK Basics (Baclofen)")
+    # Panel A: GIRK Basics (Diagram)
+    gs_row1 = gs[0].subgridspec(1, 3, width_ratios=[1.2, 1.2, 0.85], wspace=0.4)
     
-    # Load Traces
-    trace_path = 'paper_data/Plateau_data/All_Plateau_Traces.pkl'
-    plateau_traces = {}
-    if os.path.exists(trace_path):
-        plateau_traces = pd.read_pickle(trace_path)
+    # Panel A: Blank for Diagram
+    ax1_a = fig.add_subplot(gs_row1[0])
+    add_subplot_label(ax1_a, 'A')
+    ax1_a.axis('off')
+    ax1_a.text(0.5, 0.5, '[ GIRK Diagram ]', ha='center', va='center', color='grey', alpha=0.5)
+
+    # Panel B: Baclofen Traces
+    ax1_b = fig.add_subplot(gs_row1[1])
+    plot_baclofen_vm_traces(ax1_b, baclofen_traces_path, label='B')
+
+    # Panel C: Baclofen Delta Vm — clamped to -10 at bottom
+    ax1_c = fig.add_subplot(gs_row1[2])
+    plot_gabab_vm_change(ax1_c, baclofen_vm_path, 'C', df_stats)
+    ax1_c.set_ylim(-10, 0)
+    apply_clean_yticks(ax1_c, n=6)
+
+    # ------------------------------------------------------------------
+    # ROW 2: Unitary ML297
+    # ------------------------------------------------------------------
+    print("  Row 2: Unitary ML297")
+    gs_row2 = gs[1].subgridspec(1, 3, width_ratios=[1.2, 1.2, 0.85], wspace=0.4)
     
-    # Setup Figure
-    fig = plt.figure(figsize=(6.89, 5)) # Shorter height makes plots wider aspect
-    gs = fig.add_gridspec(2, 3, hspace=0.4, wspace=0.4, width_ratios=[1.3, 1.3, 1])
-    
-    # =========================================================================
-    # ROW 1 - PANEL A: ML297 (After = Yellow)
-    # =========================================================================
+    ax2_d = fig.add_subplot(gs_row2[0])
+    add_subplot_label(ax2_d, 'D')
+    plot_unitary_gabab_traces_by_pathway(ax2_d, unitary_traces_path, 'WT', 'Perforant', '', drugs=['Gabazine', 'ML297'])
+
+    ax2_e = fig.add_subplot(gs_row2[1])
+    plot_unitary_gabab_traces_by_pathway(ax2_e, unitary_traces_path, 'GNB1', 'Perforant', '', drugs=['Gabazine', 'ML297'])
+
+    ax2_f = fig.add_subplot(gs_row2[2])
+    plot_unitary_gabab_area_delta_single(ax2_f, unitary_delta_path, 'ML297', 'Perforant', 'F', df_stats)
+
+    # ------------------------------------------------------------------
+    # ROW 3: ML297 Theta Burst (Plateau)
+    # ------------------------------------------------------------------
+    print("  Row 3: ML297 Plateau")
+    gs_row3 = gs[2].subgridspec(1, 3, width_ratios=[1.2, 1.2, 0.85], wspace=0.4)
+    plateau_traces = pd.read_pickle(plateau_traces_path) if os.path.exists(plateau_traces_path) else {}
+
     if 'Before_ML297' in plateau_traces and 'After_ML297' in plateau_traces:
-        # Col 0: WT
-        ax_a1 = fig.add_subplot(gs[0, 0])
-        add_subplot_label(ax_a1, "A")
-        plot_traces_GIRK_v2(ax_a1, plateau_traces['Before_ML297'], plateau_traces['After_ML297'], 
+        ax3_g = fig.add_subplot(gs_row3[0])
+        add_subplot_label(ax3_g, 'G')
+        plot_traces_GIRK_v2(ax3_g, plateau_traces['Before_ML297'], plateau_traces['After_ML297'],
                             'WT', 'ML297', after_color='gold', add_legend=True, add_scale=True)
-        
-        # Col 1: I80T/+
-        ax_a2 = fig.add_subplot(gs[0, 1])
-        plot_traces_GIRK_v2(ax_a2, plateau_traces['Before_ML297'], plateau_traces['After_ML297'], 
-                            'I80T/+', 'ML297', after_color='gold', add_legend=False, add_scale=False)
-    
-    # Col 2: Delta Quantification
-    ax_a3 = fig.add_subplot(gs[0, 2])
-    if df_delta is not None:
-        plot_girk_delta_bars(ax_a3, df_delta, 'ML297', df_stats)
-    
-    # =========================================================================
-    # ROW 2 - PANEL B: ETX (After = Red)
-    # =========================================================================
+
+        ax3_h = fig.add_subplot(gs_row3[1])
+        plot_traces_GIRK_v2(ax3_h, plateau_traces['Before_ML297'], plateau_traces['After_ML297'],
+                            'I80T/+', 'ML297', after_color='gold', add_legend=False)
+
+        ax3_i = fig.add_subplot(gs_row3[2])
+        plot_plateau_girk_delta(ax3_i, plateau_delta_path, 'ML297', 'I', df_stats)
+        _bot, _ = ax3_i.get_ylim()
+        ax3_i.set_ylim(_bot, 5)   # cap ymax at +5
+        apply_clean_yticks(ax3_i, n=6)
+
+    # ------------------------------------------------------------------
+    # ROW 4: ETX Theta Burst (Plateau)
+    # ------------------------------------------------------------------
+    print("  Row 4: ETX Plateau")
+    gs_row4 = gs[3].subgridspec(1, 3, width_ratios=[1.2, 1.2, 0.85], wspace=0.4)
     if 'Before_ETX' in plateau_traces and 'After_ETX' in plateau_traces:
-        # Col 0: WT
-        ax_b1 = fig.add_subplot(gs[1, 0])
-        add_subplot_label(ax_b1, "B")
-        plot_traces_GIRK_v2(ax_b1, plateau_traces['Before_ETX'], plateau_traces['After_ETX'], 
-                            'WT', 'ETX', after_color='blue', add_legend=True, add_scale=True)
-        
-        # Col 1: I80T/+
-        ax_b2 = fig.add_subplot(gs[1, 1])
-        plot_traces_GIRK_v2(ax_b2, plateau_traces['Before_ETX'], plateau_traces['After_ETX'], 
-                            'I80T/+', 'ETX', after_color='blue', add_legend=False, add_scale=False)
+        ax4_j = fig.add_subplot(gs_row4[0])
+        add_subplot_label(ax4_j, 'J')
+        plot_traces_GIRK_v2(ax4_j, plateau_traces['Before_ETX'], plateau_traces['After_ETX'],
+                            'WT', 'ETX', after_color='cyan', add_legend=False, add_scale=True)
 
-    # Col 2: Delta Quantification
-    ax_b3 = fig.add_subplot(gs[1, 2])
-    if df_delta is not None:
-        plot_girk_delta_bars(ax_b3, df_delta, 'ETX', df_stats)
+        ax4_k = fig.add_subplot(gs_row4[1])
+        plot_traces_GIRK_v2(ax4_k, plateau_traces['Before_ETX'], plateau_traces['After_ETX'],
+                            'I80T/+', 'ETX', after_color='cyan', add_legend=False)
 
-    save_current_fig('Figure_7_GIRK')
+        ax4_l = fig.add_subplot(gs_row4[2])
+        plot_plateau_girk_delta(ax4_l, plateau_delta_path, 'ETX', 'L', df_stats)
+        apply_clean_yticks(ax4_l, n=6)  # tighter spacing for small delta range
 
-
-# ==================================================================================================
-# FIGURE 5: GABAb Analysis (Schaffer / Perforant Pathways)
-# ==================================================================================================
-
-def plot_figure_5_GABAb():
-    """
-    Figure 5: GABAb Analysis
-    Row 1: Traces - ECIII (Perforant, A) | CA3 Apical (Schaffer, B) | CA3 Basal (C)
-    Row 2: Quantifications - ECIII (D) | CA3 Apical (E) | CA3 Basal (F)
-    Row 3: Baclofen - Diagram (G) | WT Vm Traces (H left) | GNB1 Vm Traces (H right)
-    Row 4: Vm Change Quantification (I)
-    """
-    print("\n--- Generating Figure 5: GABAb Analysis ---")
-    setup_publication_style()
-    
-    gabab_df = pd.read_csv('paper_data/gabab_analysis/GABAb_Analysis_Metrics.csv')
-    
-    # Load statistical results if available
-    df_stats = None
-    stats_file = 'paper_data/gabab_analysis/Stats_Results_Figure_5.csv'
-    if os.path.exists(stats_file):
-        df_stats = pd.read_csv(stats_file)
-        print(f"✓ Loaded Figure 5 statistics: {len(df_stats)} comparisons")
-    else:
-        print("⚠ Note: Run Analyze_Stats_Python.py to generate statistical annotations")
-    
-    trace_path = 'paper_data/gabab_analysis/GABAb_Individual_Traces_Hierarchical.pkl'
-    gabab_traces = {}
-    if os.path.exists(trace_path):
-        gabab_traces = pd.read_pickle(trace_path)
-    
-    # Rename GNB1 -> I80T/+ for display
-    gabab_df = rename_genotype(gabab_df)
-
-    # Filter for Gabazine condition only (case-insensitive)
-    gabab_gab = gabab_df[gabab_df['Condition'].str.lower() == 'gabazine'].copy()
-    gabab_gab = gabab_gab.drop_duplicates(subset=['Cell_ID', 'Channel_Name'])
-    
-    # Figure dimensions: 3 rows × 3 columns
-    fig = plt.figure(figsize=(6.5, 8.5))
-    gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.3, 
-                         left=0.08, right=0.98, top=0.96, bottom=0.05,
-                         height_ratios=[1, 1, 1.2])
-    
-    # Only Slow IPSP Area metric
-    metric_col = 'Integral_mV_ms'
-    metric_ylabel = 'Slow IPSP Area\n(mV·ms)'
-    
-    # ---------------------------------------------------------
-    # ROW 1: Traces for all 3 pathways
-    # ---------------------------------------------------------
-    pathways_traces = [
-        ('Perforant Path', 'ECIII (Perforant)', 0, 'A', 'Perforant'),
-        ('Schaffer Collateral', 'CA3 Apical (Schaffer)', 1, 'B', 'Schaffer'),
-        ('Stratum Oriens', 'CA3 Basal', 2, 'C', 'Basal'),
-    ]
-    
-    for pathway_key, pathway_label, col, trace_label, pathway_match in pathways_traces:
-        ax_trace = fig.add_subplot(gs[0, col])
-        title = f'Unitary EPSP (300ms ISI)\n{pathway_label}'
-        plot_gabab_traces(ax_trace, gabab_traces, pathway_key, title, trace_label, gabab_gab)
-    
-    # ---------------------------------------------------------
-    # ROW 2: Quantifications for all 3 pathways
-    # ---------------------------------------------------------
-    pathways_metrics = [
-        ('Perforant Path', 0, 'D', 'Perforant'),
-        ('Schaffer Collateral', 1, 'E', 'Schaffer'),
-        ('Stratum Oriens', 2, 'F', 'Basal'),
-    ]
-    
-    for pathway_key, col, metric_label, pathway_match in pathways_metrics:
-        ax_metric = fig.add_subplot(gs[1, col])
-        plot_gabab_metric_bar(ax_metric, gabab_gab, pathway_key, metric_col, metric_ylabel, 
-                             metric_label, df_stats, pathway_match)
-    
-    # ---------------------------------------------------------
-    # ---------------------------------------------------------
-    # ROW 3: Baclofen Effects (Diagram G | Traces H | Stats I)
-    # ---------------------------------------------------------
-    
-    # --- Panel G: Diagram Placeholder ---
-    ax_diagram = fig.add_subplot(gs[2, 0])
-    add_subplot_label(ax_diagram, 'G')
-    ax_diagram.text(0.5, 0.5, 'Diagram', ha='center', va='center', fontsize=10, 
-                    color='gray', style='italic')
-    ax_diagram.set_xlim(0, 1)
-    ax_diagram.set_ylim(0, 1)
-    ax_diagram.axis('off')
-    
-    # --- Panel H: Baclofen Vm Example Traces (Stacked) ---
-    vm_traces_path = 'paper_data/gabab_analysis/Baclofen_Vm_Example_Traces.pkl'
-    ax_traces = fig.add_subplot(gs[2, 1])
-    plot_baclofen_vm_traces(ax_traces, vm_traces_path, label='H')
-    
-    # --- Panel I: Vm Change Quantification ---
-    vm_csv = 'paper_data/gabab_analysis/Baclofen_Vm_Change.csv'
-    ax_vm = fig.add_subplot(gs[2, 2])
-    plot_gabab_vm_change(ax_vm, vm_csv, "I", df_stats=df_stats)
-    
-    save_current_fig('Figure_5_GABAb')
+    save_current_fig('Figure_8_GIRK_Restructured')
 
 
 def plot_supplemental_figure_1():
     """
-    Supplemental Figure 1: Full E:I Breakdown (Control, Gabazine, Expected, Est. Inhibition)
-    Separate panels for WT and I80T/+ across 3 pathways.
+    Supplemental Figure 1: Full E/I Imbalance Index Summary
+    Plots genotype comparisons and statistical significance across all ISIs and pathways.
     """
-    print("\n--- Generating Supplemental Figure 1: Full E:I Breakdown ---")
+    print("\n--- Generating Supplemental Figure 1: E/I Imbalance ---")
+    setup_publication_style()
     
     # Load data
     ei_amp_path = 'paper_data/E_I_data/E_I_amplitudes.csv'
@@ -1473,23 +1630,18 @@ def plot_supplemental_figure_1():
         return
         
     df = pd.read_csv(ei_amp_path)
-
-    # Rename GNB1 -> I80T/+ for display
     df = rename_genotype(df)
     
-    # WIDTH constraint: max 17.5 cm, explicitly made smaller as requested
-    fig_width = 15 / 2.54 
-    fig_height = 5  # inches - adjusted for square aspect ratio
+    # Statistics Markers
+    markers_path = 'paper_data/E_I_data/Figure_5_6_Significance_Markers.csv'
+    df_markers = pd.read_csv(markers_path) if os.path.exists(markers_path) else None
     
-    # Increase bottom margin for legend
-    fig, axes = plt.subplots(2, 3, figsize=(fig_width, fig_height), sharex=False, sharey=True)
-    fig.subplots_adjust(wspace=0.35, hspace=0.35, left=0.08, right=0.98, top=0.9, bottom=0.15)
+    # Match dimensions of Figure 6 subplots
+    fig_width = 7.5
+    fig_height = 2.5 
     
-    # Remove top/right spines for all
-    for ax in axes.flat:
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.tick_params(labelleft=True)  # Force y-labels to be visible with sharey=True
+    fig, axes = plt.subplots(1, 3, figsize=(fig_width, fig_height), sharex=False, sharey=False)
+    fig.subplots_adjust(wspace=0.35, left=0.08, right=0.98, top=0.8, bottom=0.2)
     
     pathways = [
         ('Perforant', 'Perforant'),
@@ -1497,29 +1649,29 @@ def plot_supplemental_figure_1():
         ('Basal SO', 'Basal_Stratum_Oriens')
     ]
     
-    genotypes = ['WT', 'I80T/+']
-    
-    metrics = [
-        ('Control_Amplitude', 'Measured (With Inhibition)', 'black'),
-        ('Gabazine_Amplitude', 'Measured (No Inhibition)', 'magenta'),
-        ('Expected_EPSP_Amplitude', 'Expected (Linear Summation)', 'grey')]
-    
-    isi_order = [300, 100, 50, 25, 10]
+    ylims = []
+    for col_idx, (path_label, path_code) in enumerate(pathways):
+        ax = axes[col_idx]
+        ylim = plot_metric_comparison(ax, df, path_code, 'E_I_Imbalance', 
+                                     'E/I Imbalance Index' if col_idx==0 else '', 
+                                     add_legend=(col_idx==2))
+        ax.set_title(path_label, fontsize=10, fontweight='bold')
+        ax.set_xlabel('ISI (ms)')
+        
+        # Add labels and significance markers
+        if df_markers is not None:
+            annotate_with_sig_markers(ax, df_markers, 'E_I_Imbalance', path_code, 'WT_vs_GNB1', range(5))
+        
+        ylims.append(ylim)
+        
+    # Sync Y axes
+    ymin = min(y[0] for y in ylims if y is not None)
+    ymax = max(y[1] for y in ylims if y is not None)
+    for ax in axes:
+        ax.set_ylim(ymin, ymax)
+        apply_clean_yticks(ax)
 
-    plot_supplemental_figure_1_helper(isi_order, metrics, pathways, genotypes, df, axes)    
-    # --- Custom Legend at Bottom ---
-    legend_elements = [
-        Line2D([0], [0], color='black', marker='o', lw=1.5, label='Measured - With Inhibition'),
-        Line2D([0], [0], color='magenta', marker='o', lw=1.5, label='Measured - No Inhibition'),
-        Line2D([0], [0], color='skyblue', marker='o', lw=1.5, label='Inhibition (No Inhibition - With Inhibition)'),
-        Line2D([0], [0], color='grey', marker='o', lw=1.5, linestyle='--', label='Expected - Linear Summation')
-    ]
-    
-    fig.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, 0.001),
-              ncol=2, frameon=False, fontsize=8)
-
-    save_current_fig('Supplemental_Figure_1_EI_Breakdown')
-
+    save_current_fig('Supplemental_Figure_1_EI_Imbalance')
 
 def plot_supplemental_figure_2():
     """
@@ -1628,17 +1780,16 @@ def plot_supplemental_figure_3():
     save_current_fig('Supplemental_Figure_3_Protein_Levels')
     
 
-
-
 if __name__ == "__main__":
     setup_publication_style()
     plot_figure_1_behavior()
     plot_figure_2_physiology()
     plot_figure_3_morphology()
-    plot_figure_4_EI()
-    plot_figure_5_GABAb()
-    plot_figure_6_dendritic()
-    plot_figure_7_GIRK()
+    plot_figure_4_Unitary_E_I_Breakdown()
+    plot_figure_5_EI_frequency_dependence()
+    plot_figure_6_Supralinear_E_I()
+    plot_figure_7_dendritic()
+    plot_figure_8_GIRK()
     plot_supplemental_figure_1()
     plot_supplemental_figure_2()
     plot_supplemental_figure_3()

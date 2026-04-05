@@ -8,6 +8,7 @@ import os
 from scipy.signal import find_peaks
 import ast
 import matplotlib.ticker as ticker
+import pickle
 
 # ---------------------------------------------------------------------------
 # Compatibility shim: pandas ≥1.2 dropped multi-dimensional Series indexing
@@ -135,7 +136,17 @@ def parse_list_string(list_str):
 # FIGURE 4 SIGNIFICANCE MARKERS HELPER
 # ==================================================================================================
 
-def load_figure_4_significance_markers():
+def annotate_fig4(ax, df_s, metric, pathway_key):
+        if df_s is None: return
+        row = df_s[(df_s['Metric'] == metric) & (df_s['Pathway'] == pathway_key)]
+        if row.empty: return
+        p = row.iloc[0]['P_Value']
+        ylo, yhi = ax.get_ylim()
+        # For positive values bracket above, for negative bracket below baseline
+        y_bracket = yhi * 0.9 if yhi > 0 else ylo * 0.9
+        draw_significance(ax, 0, 1, p, y_bracket, bracket=True)
+
+def load_figure_5_significance_markers():
     """
     Load Figure 4 significance markers from the FDR-corrected stats file.
     
@@ -156,14 +167,13 @@ def load_figure_4_significance_markers():
         print("  Run Figure_4_All_Stats.R to generate significance markers.")
         return None
 
-
-def get_figure_4_markers(df_markers, analysis, pathway, comparison):
+def get_figure_5_markers(df_markers, analysis, pathway, comparison):
     """
     Get significance markers for a specific analysis/pathway/comparison.
     
     Args:
         df_markers: DataFrame from load_figure_4_significance_markers()
-        analysis: 'EPSP_Amplitude', 'Gabazine_Supralinearity', or 'E_I_Imbalance'
+        analysis: 'Gabazine_Amplitude', 'Gabazine_Supralinearity', or 'E_I_Imbalance'
         pathway: 'Perforant', 'Schaffer', or 'Basal_Stratum_Oriens'
         comparison: e.g., 'WT_vs_GNB1_Gabazine', 'WT_Control_vs_Gabazine', etc.
     
@@ -193,6 +203,7 @@ def get_figure_4_markers(df_markers, analysis, pathway, comparison):
     
     return {
         'main_effect': row['Main_Effect_Marker'] if pd.notna(row['Main_Effect_Marker']) else '',
+        'interaction_marker': row['Interaction_Marker'] if pd.notna(row['Interaction_Marker']) else '',
         'isi_markers': {
             10: row['ISI10_Marker'] if pd.notna(row['ISI10_Marker']) else '',
             25: row['ISI25_Marker'] if pd.notna(row['ISI25_Marker']) else '',
@@ -200,8 +211,8 @@ def get_figure_4_markers(df_markers, analysis, pathway, comparison):
             100: row['ISI100_Marker'] if pd.notna(row['ISI100_Marker']) else '',
             300: row['ISI300_Marker'] if pd.notna(row['ISI300_Marker']) else ''
         },
-        'main_p': row['Main_Effect_p'],
-        'interaction_p': row['Interaction_p']
+        'main_p': row.get('Main_Effect_p', np.nan),
+        'interaction_p': row.get('Interaction_p', np.nan)
     }
 
 
@@ -292,41 +303,113 @@ def prepare_isi_curve_data(df, max_spikes=15):
 
 # PLOTTING FUNCTIONS (Standard & Specialized)
 
-def set_ylim_smart(ax, data, y_col, padding_fraction=0.1):
+def set_ylim_smart(ax, data, y_col, padding_fraction=0.15, floating_baseline=False):
     """
-    Set y-axis limits intelligently, extending below zero if values are close to zero.
-    
-    Parameters:
-        ax: matplotlib axes
-        data: DataFrame containing the data
-        y_col: column name for y-values
-        padding_fraction: fraction of data range to add as padding (default 0.1 = 10%)
+    Set y-axis limits based on data range with padding.
+    - Positive-only data: lower limit = 0 (never below zero)
+    - Negative-only data: upper limit = 0 (never above zero)
+    - Mixed data: symmetric padding around range
     """
     values = data[y_col].dropna().values
     if len(values) == 0:
         return
-    
+
     y_min = values.min()
     y_max = values.max()
-    y_range = y_max - y_min if y_max != y_min else y_max
-    
-    # Always extend a bit below zero so bars don't sit flush on the x-axis
+    y_range = y_max - y_min if y_max != y_min else abs(y_max) or 1
+
     if y_min >= 0:
-        lower_limit = -y_range * padding_fraction
-    else:
+        # All positive: anchor at 0, pad top only
+        lower_limit = -y_range * 0.02 if floating_baseline else 0
+        upper_limit = y_max + y_range * padding_fraction
+    elif y_max <= 0:
+        # All negative: anchor at 0, pad bottom only
         lower_limit = y_min - y_range * padding_fraction
-    
-    upper_limit = y_max + y_range * padding_fraction
-    
+        upper_limit = y_range * 0.02 if floating_baseline else 0
+    else:
+        # Mixed: pad both sides
+        lower_limit = y_min - y_range * padding_fraction
+        upper_limit = y_max + y_range * padding_fraction
+
     ax.set_ylim(lower_limit, upper_limit)
 
-def plot_bar_scatter(ax, data, x_col, y_col, hue_col, order=None, bar_width=0.6, unique_col=None, override_n_counts=None, show_scatter=True):
+
+def apply_clean_yticks(ax, n=5, floating_baseline=False):
+    """
+    Sets n Y-axis ticks with proper anchoring.
+    - Positive data:  first tick = 0, grows upward.   Data never clipped.
+    - Negative data:  last  tick = 0, grows downward. Data never clipped.
+    - Mixed data:     0 as centre anchor, extends both ways.
+    Call AFTER setting ylim.
+    """
+    import numpy as np
+
+    ymin, ymax = ax.get_ylim()
+    if abs(ymax - ymin) < 1e-12:
+        return
+
+    tol = abs(ymax - ymin) * 1e-6
+
+    def _nice_step(span, n_intervals):
+        """Round span/n_intervals UP to nearest nice number."""
+        raw = span / n_intervals
+        mag = 10 ** np.floor(np.log10(abs(raw) + 1e-30))
+        for c in [1, 2, 2.5, 5, 10]:
+            if c >= raw / mag - 1e-9:
+                return c * mag
+        return 10 * mag
+
+    def _decimals(step):
+        return max(0, -int(np.floor(np.log10(abs(step) + 1e-30))))
+
+    if ymin >= -tol:
+        # ---- POSITIVE DATA: anchor at 0 ----
+        step = _nice_step(ymax, n - 1)
+        ticks = np.array([i * step for i in range(n)])
+        while ticks[-1] < ymax - tol:          # extend until top tick >= ymax
+            ticks = np.append(ticks, ticks[-1] + step)
+        ticks = ticks[:n]                       # keep first n (0 … top)
+
+    elif ymax <= tol:
+        # ---- NEGATIVE DATA: anchor at 0 (top) ----
+        step = _nice_step(abs(ymin), n - 1)
+        ticks = np.array([-(n - 1 - i) * step for i in range(n)])
+        while ticks[0] > ymin + tol:           # extend until bottom tick <= ymin
+            ticks = np.insert(ticks, 0, ticks[0] - step)
+        ticks = ticks[-n:]                      # keep last n (bottom … 0)
+
+    else:
+        # ---- MIXED DATA: anchor at 0 ----
+        step = _nice_step(ymax - ymin, n - 1)
+        neg_steps = int(np.ceil(abs(ymin) / step))
+        pos_steps = int(np.ceil(ymax      / step))
+        ticks = np.array([(-neg_steps + i) * step
+                          for i in range(neg_steps + pos_steps + 1)])
+        # Guarantee full coverage
+        while ticks[0]  > ymin + tol:  ticks = np.insert(ticks, 0, ticks[0] - step)
+        while ticks[-1] < ymax - tol:  ticks = np.append(ticks, ticks[-1] + step)
+
+    decimals = _decimals(step)
+    ticks = np.round(np.array(ticks, dtype=float), decimals)
+    ax.set_yticks(ticks.tolist())
+    
+    if floating_baseline:
+        span = ticks[-1] - ticks[0]
+        final_ymin = ticks[0] - span * 0.02 if ymin >= -tol else ticks[0]
+        final_ymax = ticks[-1] + span * 0.02 if ymax <= tol else ticks[-1]
+        ax.set_ylim(final_ymin, final_ymax)
+    else:
+        ax.set_ylim(ticks[0], ticks[-1])
+
+
+def plot_bar_scatter(ax, data, x_col, y_col, hue_col, order=None, bar_width=0.6, unique_col=None,
+                     override_n_counts=None, show_scatter=True, ymax=None, ymin=None, floating_baseline=False):
     if order is None: order = sorted(data[x_col].unique())
     max_height = 0
 
     for i, group in enumerate(order):
         subset = data[data[x_col] == group]
-        if subset.empty: 
+        if subset.empty:
             continue
         
         color = COLORS.get(group, 'gray')
@@ -339,7 +422,7 @@ def plot_bar_scatter(ax, data, x_col, y_col, hue_col, order=None, bar_width=0.6,
         current_max = mean + sem
         if current_max > max_height: max_height = current_max
         
-        ax.bar(i, mean, width=bar_width, color=color, alpha=0.5, label=group)
+        ax.bar(i, mean, width=bar_width, color=color, alpha=0.5, label=group, edgecolor='none')
         ax.errorbar(i, mean, yerr=sem, fmt='o', color=color, capsize=1, elinewidth=1, markersize=2)
         
         if show_scatter:
@@ -366,8 +449,23 @@ def plot_bar_scatter(ax, data, x_col, y_col, hue_col, order=None, bar_width=0.6,
     ax.set_ylabel(y_col.replace('_', ' '))
     ax.grid(False)
     
-    # Set smart y-limits that extend below zero if values are close to zero
-    set_ylim_smart(ax, data, y_col)
+    # Set smart y-limits
+    set_ylim_smart(ax, data, y_col, floating_baseline=floating_baseline)
+    # Apply optional hard caps BEFORE tick computation
+    cur_min, cur_max = ax.get_ylim()
+    if ymin is not None: cur_min = ymin
+    if ymax is not None: cur_max = ymax
+    ax.set_ylim(cur_min, cur_max)
+    apply_clean_yticks(ax, floating_baseline=floating_baseline)
+    
+    # Force-clamp AFTER apply_clean_yticks (which may have expanded ylim)
+    if ymin is not None or ymax is not None:
+        final_min = ymin if ymin is not None else ax.get_ylim()[0]
+        final_max = ymax if ymax is not None else ax.get_ylim()[1]
+        # Filter ticks to only those within range
+        ticks = [t for t in ax.get_yticks() if final_min - 1e-9 <= t <= final_max + 1e-9]
+        ax.set_ylim(final_min, final_max)
+        ax.set_yticks(ticks)
     
     return max_height
 
@@ -1204,41 +1302,159 @@ def draw_significance(ax, x1, x2, p_val, y_pos, bracket=True):
     if text_y > current_ylim[1] * 0.9:
         ax.set_ylim(current_ylim[0], text_y * 1.15)
 
-def annotate_from_stats(ax, stats_df, panel_id, comparison_substring, x1, x2, y_pos, bracket=True):
-    """Looks up p-value from the loaded stats dataframe and draws the annotation."""
-    if stats_df is None: return
+def annotate_with_sig_markers(ax, markers_df, analysis, pathway, comparison, x_coords):
+    """
+    Draws statistical significance markers.
+    Bracket string '*' for main effect.
+    Bracket string '#' for interaction effect.
+    Also includes asterisk for post-hoc at specific data points.
+    """
+    if markers_df is None: return
+    
+    # Pathway naming map for CSV matching
+    path_map = {'ECIII (Perforant)': 'Perforant', 'Perforant': 'Perforant',
+                'CA3 Apical (Schaffer)': 'Schaffer', 'Schaffer': 'Schaffer',
+                'CA3 Basal (S. Oriens)': 'Basal_Stratum_Oriens', 'Basal_Stratum_Oriens': 'Basal_Stratum_Oriens',
+                'CA3 Basal': 'Basal_Stratum_Oriens'}
 
-    match = stats_df[
-        (stats_df['Figure_Panel'] == panel_id) & 
-        (stats_df['Comparison'].str.contains(comparison_substring, regex=False))
+    path_csv = path_map.get(pathway, pathway)
+    
+    match = markers_df[
+        (markers_df['Analysis'] == analysis) & 
+        (markers_df['Pathway'] == path_csv) & 
+        (markers_df['Comparison'] == comparison)
     ]
     
-    if not match.empty:
-        p_val = match.iloc[0]['P_Value']
-        test_type = match.iloc[0].get('Test_Used', '')
+    if match.empty: 
+        return
+    
+    row = match.iloc[0]
+    
+    main_p = row.get('Main_Effect_p', np.nan)
+    inter_p = row.get('Interaction_p', np.nan)
+    
+    main_sig = pd.notna(main_p) and float(main_p) < 0.05
+    inter_sig = pd.notna(inter_p) and float(inter_p) < 0.05
+
+    y_min, y_max_data = ax.get_ylim()
+    y_range = y_max_data - y_min
+    
+    did_draw_extra = False
+    x_min, x_max = min(x_coords), max(x_coords)
+    isi_to_index = {300: 0, 100: 1, 50: 2, 25: 3, 10: 4}
+
+    # 1. Main Effect and Interaction Brackets
+    # Use symbols: '*' for main effect, '#' for interaction
+    symbols = []
+    if main_sig:
+        symbols.append('*')
+    if inter_sig:
+        symbols.append('#')
         
-        if not bracket:
-            # Text annotation mode (e.g. for KS test or where bracket doesn't make sense)
-            if p_val < 0.001: txt = "p < 0.001"
-            else: txt = f"p = {p_val:.4f}"
-            
-            # Add star for significance
-            if p_val < 0.05: txt += "*"
-            if p_val < 0.01: txt += "*"
-            if p_val < 0.001: txt += "*"
-            
-            # Add test label only for KS tests
-            if 'KS' in str(test_type):
-                prefix = "KS test: "
-            else:
-                prefix = ""
-            
-            # Draw text
-            ax.text((x1 + x2) * 0.5, y_pos, f"{prefix}{txt}", 
-                   transform=ax.transAxes, ha='left', va='top', fontsize=10)
+    if symbols:
+        symbol_str = " ".join(symbols)
+        bracket_y = y_max_data + y_range * 0.15
+        ax.plot([x_min, x_max], [bracket_y, bracket_y], 'k-', linewidth=0.8)
+        ax.plot([x_min, x_min], [bracket_y, bracket_y - y_range * 0.02], 'k-', linewidth=0.8)
+        ax.plot([x_max, x_max], [bracket_y, bracket_y - y_range * 0.02], 'k-', linewidth=0.8)
+        ax.text((x_min + x_max)/2, bracket_y + y_range * 0.02, symbol_str, 
+                ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
+        did_draw_extra = True
+
+    # 2. Post-hoc Markers (*) - Only if interaction is significant
+    if inter_sig:
+        for isi, idx in isi_to_index.items():
+            if idx in x_coords:
+                col = f'ISI{isi}_Marker'
+                marker = row.get(col, '')
+                if pd.notna(marker) and '*' in str(marker):
+                    # Draw star a bit above the data point range
+                    # Should be below the bracket if bracket exists
+                    y_pos = y_max_data + y_range * 0.02
+                    ax.text(idx, y_pos, '*', ha='center', va='bottom', 
+                            fontsize=11, fontweight='bold', color='black')
+                    did_draw_extra = True
+
+    if did_draw_extra:
+        # Increase ylim to accommodate markers
+        ax.set_ylim(y_min, y_max_data + y_range * 0.35)
+
+def plot_ei_trace_summary(ax, df_traces, pathway_name, isi, trace_col, title, label):
+    """
+    Plots mean +/- SEM traces for WT and GNB1 from the E_I traces dataframe.
+    """
+    add_subplot_label(ax, label)
+    ax.set_title(title, fontweight='bold', fontsize=8)
+    ax.axis('off')
+    
+    if df_traces is None or df_traces.empty: return
+    
+    # Pathway naming map for CSV matching
+    path_map = {'ECIII (Perforant)': 'Perforant', 'Perforant': 'Perforant',
+                'CA3 Apical (Schaffer)': 'Schaffer', 'Schaffer': 'Schaffer',
+                'CA3 Basal (S. Oriens)': 'Basal_Stratum_Oriens', 'Basal_Stratum_Oriens': 'Basal_Stratum_Oriens',
+                'CA3 Basal': 'Basal_Stratum_Oriens'}
+
+    path_csv = path_map.get(pathway_name, pathway_name)
+    
+    subset = df_traces[(df_traces['Pathway'] == path_csv) & (df_traces['ISI'] == isi)]
+    
+    if subset.empty:
+        print(f"  Warning: No traces found for {pathway_name} ISI {isi}")
+        return
+
+    for geno, color in zip(['WT', 'I80T/+'], ['black', 'red']):
+        geno_traces = subset[subset['Genotype'] == geno][trace_col].dropna().values
+        if len(geno_traces) == 0: continue
         
-        elif p_val < 0.05: 
-            draw_significance(ax, x1, x2, p_val, y_pos, bracket)
+        # Ensure all traces are numpy arrays and find min length
+        valid_traces = [np.array(t) for t in geno_traces if isinstance(t, (np.ndarray, list))]
+        if not valid_traces: continue
+        
+        min_len = min(len(t) for t in valid_traces)
+        valid_traces = np.array([t[:min_len] for t in valid_traces])
+        
+        mean_trace = np.mean(valid_traces, axis=0)
+        sem_trace = np.std(valid_traces, axis=0) / np.sqrt(len(valid_traces))
+        time = np.arange(min_len) / 20 # 20 kHz
+        
+        ax.fill_between(time, mean_trace - sem_trace, mean_trace + sem_trace, color=color, alpha=0.3, edgecolor='none')
+        ax.plot(time, mean_trace, color=color, linewidth=1, label=f'{geno} (n={len(valid_traces)})')
+    
+    add_scale_bar(ax, 50, 1, x_pos=0.85, y_pos=0.15)
+    ax.legend(frameon=False, fontsize=7, loc='upper right')
+
+def plot_bar_comparison_df(ax, df_metrics, pathway_name, metric_col, ylabel, label, scale=1.0):
+    """
+    Plots a bar comparison for WT vs GNB1 from a metrics dataframe.
+    """
+    add_subplot_label(ax, label)
+    
+    # Pathway naming map 
+    path_map = {'ECIII (Perforant)': 'Perforant', 'Perforant': 'Perforant',
+                'CA3 Apical (Schaffer)': 'Schaffer', 'Schaffer': 'Schaffer',
+                'CA3 Basal (S. Oriens)': 'Basal_Stratum_Oriens', 'Basal_Stratum_Oriens': 'Basal_Stratum_Oriens',
+                'CA3 Basal': 'Basal_Stratum_Oriens'}
+
+    path_csv = path_map.get(pathway_name, pathway_name)
+    subset = df_metrics[df_metrics['Pathway'] == path_csv]
+    
+    if subset.empty: return
+    
+    # Scale if needed (e.g. mV*s -> mV*ms)
+    subset = subset.copy()
+    subset.loc[:, metric_col] = subset[metric_col] * scale
+    
+    # plot_bar_scatter(ax, data, x_col, y_col, hue_col, order=None, ...)
+    plot_bar_scatter(ax, subset, 'Genotype', metric_col, None, 
+                    order=['WT', 'I80T/+'], unique_col='Cell_ID')
+    
+    ax.set_ylabel(ylabel, fontsize=7)
+
+def annotate_from_stats(ax, stats_df, panel_id, comparison_substring, x1, x2, y_pos, bracket=True):
+    """Old annotation helper - now redirects to star-only logic for Fig 4."""
+    if stats_df is None: return
+    pass
 
 def get_safe_y(data_series, buffer_percent=0.15):
     """Calculates a safe Y position above the max data point."""
@@ -1448,6 +1664,140 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
     
     # Align all traces to baseline (first 100 samples) so they all start at same level
     baseline_samples = 100
+
+def plot_unitary_breakdown(ax, df_traces, genotype, pathway_label, annotate=True):
+    """
+    Plot unitary breakdown trace (average ± SEM, 300ms ISI) with component identification.
+    
+    Args:
+        ax: Matplotlib axis
+        df_traces: Traces dataframe
+        genotype: 'WT' or 'I80T/+' (or 'GNB1')
+        pathway_label: e.g. 'ECIII Input', 'CA3 Apical Input', 'CA3 Basal Input'
+        annotate: Boolean, whether to add brackets and component labels
+    """
+    isi = 300
+    pathway_map = {
+        'ECIII (Perforant)': 'perforant',
+        'CA3 Apical (Schaffer)': 'schaffer',
+        'CA3 Basal (Basal)': 'basal',
+        # Display label aliases
+        'ECIII Input': 'perforant',
+        'CA3 Apical Input': 'schaffer',
+        'CA3 Basal Input': 'basal',
+    }
+    pathway_key = pathway_map.get(pathway_label, 'perforant')
+
+    # --- Genotype filter: WT is WT only; mutant includes both naming conventions ---
+    if genotype in ('GNB1', 'I80T/+'):
+        genotype_targets = ['GNB1', 'I80T/+']
+    else:
+        genotype_targets = ['WT']
+
+    condition = df_traces[
+        (df_traces['Genotype'].isin(genotype_targets)) &
+        (df_traces['ISI'] == isi)
+    ].copy()
+
+    # --- Pathway filter ---
+    if pathway_key == 'basal':
+        subset = condition[condition['Pathway'] == 'Basal_Stratum_Oriens']
+    elif pathway_key == 'perforant':
+        subset = condition[condition['Channel'] == 'channel_1']
+        if 'Pathway' in subset.columns:
+            subset = subset[subset['Pathway'] != 'Basal_Stratum_Oriens']
+    else:  # schaffer
+        subset = condition[condition['Channel'] == 'channel_2']
+
+    if len(subset) == 0:
+        ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                transform=ax.transAxes, color='red', fontsize=8)
+        ax.axis('off')
+        return None
+
+    # --- Helper: compute mean + SEM from a trace column ---
+    def compute_mean_sem(df_sub, col):
+        traces = []
+        for _, row in df_sub.iterrows():
+            t = row[col]
+            if isinstance(t, np.ndarray) and len(t) > 0:
+                traces.append(t)
+        if not traces:
+            return None, None
+        from collections import Counter
+        lengths = [len(t) for t in traces]
+        target_len = Counter(lengths).most_common(1)[0][0]
+        traces = np.array([t for t in traces if len(t) == target_len])
+        mean = np.mean(traces, axis=0)
+        sem  = np.std(traces, axis=0, ddof=1) / np.sqrt(len(traces))
+        return mean, sem
+
+    control,  ctrl_sem  = compute_mean_sem(subset, 'Control_Trace')
+    gabazine, gab_sem   = compute_mean_sem(subset, 'Gabazine_Trace')
+
+    if control is None or gabazine is None:
+        return None
+
+    # N-count (unique cells)
+    n_cells = subset['Cell_ID'].dropna().nunique()
+
+    # Baseline alignment
+    baseline_samples = 100
+    control  = control  - np.mean(control [:baseline_samples])
+    gabazine = gabazine - np.mean(gabazine[:baseline_samples])
+
+    time = np.arange(len(control)) * 1000 / 20000  # 20 kHz → ms
+
+    # --- Plot mean traces + SEM shading ---
+    # Gabazine / Excitation (magenta)
+    ax.fill_between(time, gabazine - gab_sem, gabazine + gab_sem,
+                    color='magenta', alpha=0.2, edgecolor='none')
+    ax.plot(time, gabazine, color='magenta', linewidth=1.0,
+            label=f'Excitation (n={n_cells})')
+
+    # Control / With Inhibition (black)
+    ax.fill_between(time, control - ctrl_sem, control + ctrl_sem,
+                    color='black', alpha=0.15, edgecolor='none')
+    ax.plot(time, control, color='black', linewidth=1.0,
+            label=f'Inh(GABAA) (n={n_cells})')
+
+    # --- Optional annotation of components ---
+    if annotate:
+        gab_peak_idx = np.nanargmax(gabazine)
+        gab_peak_val = gabazine[gab_peak_idx]
+        ctrl_peak_val = control[gab_peak_idx]
+
+        label_x = time[-1] + 5  # 5 ms to the right of trace end
+
+        # 1. Excitation arrow
+        ax.annotate('', xy=(time[gab_peak_idx], 0),
+                    xytext=(time[gab_peak_idx], gab_peak_val),
+                    arrowprops=dict(arrowstyle='<->', color='magenta', lw=1.0))
+        ax.text(label_x, gab_peak_val / 2, 'Excitation',
+                color='magenta', fontsize=7, va='center', fontweight='bold')
+
+        # 2. Inh(GABAA) arrow (peak difference)
+        ax.annotate('', xy=(time[gab_peak_idx], ctrl_peak_val),
+                    xytext=(time[gab_peak_idx], gab_peak_val),
+                    arrowprops=dict(arrowstyle='<->', color='black', lw=1.0))
+        ax.text(label_x, (gab_peak_val + ctrl_peak_val) / 2, 'Inh(GABAA)',
+                color='black', fontsize=7, va='center', fontweight='bold')
+
+        # 3. Slow IPSP (GABAB) — shaded area below baseline on gabazine trace
+        ax.fill_between(time, gabazine, 0, where=(gabazine < 0),
+                        color='gray', alpha=0.35, edgecolor='none')
+        neg_indices = np.where(gabazine < 0)[0]
+        if len(neg_indices) > 0:
+            ax.text(label_x, -0.5, 'Slow IPSP Area\n(GABAB)',
+                    ha='left', fontsize=7, color='gray', fontweight='bold')
+
+    # Baseline reference line
+    ax.axhline(0, color='gray', linestyle='--', linewidth=0.5)
+    ax.set_title(pathway_label, fontsize=10)
+    ax.axis('off')
+
+    return time[0] if len(time) > 0 else 0, 0
+
     def align_to_baseline(trace):
         if trace is not None and len(trace) > baseline_samples:
             baseline = np.mean(trace[:baseline_samples])
@@ -1554,7 +1904,7 @@ def plot_ei_averages(ax, df_traces, genotype, isi, label, add_legend=False, path
         ax.legend(frameon=False, loc='upper right')
     
     # Limit x-axis to zoom in on the relevant part of the trace (EPSP)
-    ax.set_xlim(0, max_time_ms)
+    #ax.set_xlim(0, max_time_ms)
     
     # Get current y limits
     y_min, y_max = ax.get_ylim()
@@ -1702,16 +2052,16 @@ def plot_epsp_amplitudes(ax, df_amplitudes, channel, genotype, title=None):
         else:
             return ''
     
-    # Helper function to get hash symbol for Expected comparison
-    def get_hash_symbol(p_value):
+    # Helper function to get asterisk symbol for Expected comparison (was hash)
+    def get_star_symbol_grey(p_value):
         if pd.isna(p_value):
             return ''
         elif p_value < 0.001:
-            return '###'
+            return '***'
         elif p_value < 0.01:
-            return '##'
+            return '**'
         elif p_value < 0.05:
-            return '#'
+            return '*'
         else:
             return ''
     
@@ -1736,7 +2086,7 @@ def plot_epsp_amplitudes(ax, df_amplitudes, channel, genotype, title=None):
             matching_rows = stats_gabazine_vs_expected[stats_gabazine_vs_expected['ISI_Time'] == isi_str]
             if not matching_rows.empty:
                 p_val = matching_rows.iloc[0]['p.value']
-                symbol = get_hash_symbol(p_val)
+                symbol = get_star_symbol_grey(p_val)
                 if symbol:
                     # Place above expected point
                     y_pos = expected_means[i] + expected_sems[i] + y_max * 0.03
@@ -2178,6 +2528,7 @@ def plot_bar_scatter_fig2(ax, df, column, ylabel, df_stats, stats_key):
     ax.set_ylabel(ylabel, fontsize=10)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
+    apply_clean_yticks(ax)
     
     # Add stats annotation
     if df_stats is not None:
@@ -2509,7 +2860,7 @@ def plot_ahp_area_comparison(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, tar
     plot_single_ahp_area(ax_gnb1, target_gnb1, 'I80T/+', df_ap_ahp)
 
 # ==================================================================================================
-# FIGURE 4 HELPER FUNCTIONS FOR 3-PATHWAY LAYOUT
+# FIGURE 4 and 5 HELPER FUNCTIONS FOR 3-PATHWAY LAYOUT
 # ==================================================================================================
 
 def plot_epsp_amplitudes_pathway(ax, df_amplitudes, pathway_name, genotype, title=None):
@@ -2586,12 +2937,12 @@ def plot_epsp_amplitudes_pathway(ax, df_amplitudes, pathway_name, genotype, titl
         elif p_value < 0.05: return '*'
         return ''
     
-    # Helper for hash symbol (Expected comparison)
-    def get_hash_symbol(p_value):
+    # Helper for star symbol (Expected comparison) - was hash
+    def get_star_symbol_grey(p_value):
         if pd.isna(p_value): return ''
-        elif p_value < 0.001: return '###'
-        elif p_value < 0.01: return '##'
-        elif p_value < 0.05: return '#'
+        elif p_value < 0.001: return '***'
+        elif p_value < 0.01: return '**'
+        elif p_value < 0.05: return '*'
         return ''
 
     # Load Drug effect stats (Control vs Gabazine within genotype)
@@ -2635,7 +2986,7 @@ def plot_epsp_amplitudes_pathway(ax, df_amplitudes, pathway_name, genotype, titl
                 match = stats_gab_vs_exp[stats_gab_vs_exp['ISI_Time'] == isi_str]
                 if not match.empty:
                     p_val = match.iloc[0]['p.value']
-                    symbol = get_hash_symbol(p_val)
+                    symbol = get_star_symbol_grey(p_val)
                     if symbol:
                         # Place above expected point (or gabazine if higher overlap, but keep simple)
                         y_pos = exp_means[i] + exp_sems[i] + y_max * 0.05
@@ -2646,7 +2997,7 @@ def plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name):
     """
     Plot Gabazine condition only, comparing WT vs GNB1.
     
-    Uses significance markers from Figure_4_Significance_Markers.csv:
+    Uses significance markers from Figure_5_Significance_Markers.csv:
     - '*' over ISIs with significant post-hoc (FDR corrected)
     - '#' with brackets for significant Genotype:ISI_Time interaction
     
@@ -2700,149 +3051,365 @@ def plot_gabazine_genotype_comparison(ax, df_amplitudes, pathway_name):
     ax.legend(frameon=False, loc='best', fontsize=7)
     
     # --- Load significance markers from FDR-corrected file ---
-    df_markers = load_figure_4_significance_markers()
-    markers = get_figure_4_markers(df_markers, 'EPSP_Amplitude', pathway_name, 'WT_vs_GNB1_Gabazine')
-    
-    # Calculate y_max for positioning markers
-    valid_wt = [m + s for m, s in zip(wt_means, wt_sems) if not np.isnan(m)]
-    valid_gnb1 = [m + s for m, s in zip(gnb1_means, gnb1_sems) if not np.isnan(m)]
-    y_max = max(max(valid_wt) if valid_wt else 0, max(valid_gnb1) if valid_gnb1 else 0)
-    
-    # Add asterisks over ISIs with significant post-hoc (FDR corrected)
-    for i, isi in enumerate(isis):
-        marker = markers['isi_markers'].get(isi, '')
-        if marker == '*':
-            y_pos = y_max + y_max * 0.08
-            ax.text(i, y_pos, '*', ha='center', va='bottom',
-                   fontsize=10, fontweight='bold', color='black')
-    
-    # Add hashtag with brackets if Genotype main effect is significant
-    main_marker = markers.get('main_effect', '')
-    if main_marker == '#':
-        bracket_y = y_max + y_max * 0.18
-        
-        # Draw horizontal line
-        ax.plot([0, len(isis)-1], [bracket_y, bracket_y], 'k-', linewidth=0.8)
-        # Draw vertical ticks
-        ax.plot([0, 0], [bracket_y, bracket_y - y_max*0.02], 'k-', linewidth=0.8)
-        ax.plot([len(isis)-1, len(isis)-1], [bracket_y, bracket_y - y_max*0.02], 'k-', linewidth=0.8)
-        
-        # Add hashtag symbol
-        ax.text(len(isis)/2 - 0.5, bracket_y + y_max*0.02, '#',
-               ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
+    df_markers = load_figure_5_significance_markers()
+    annotate_with_sig_markers(ax, df_markers, 'Gabazine_Amplitude', pathway_name, 'WT_vs_GNB1', range(len(isis)))
 
-def plot_metric_comparison(ax, df_amplitudes, pathway_name, column, ylabel, add_legend=False, df_stats=None):
+def plot_10ms_ISI_breakdown(ax, df_traces, genotype, pathway_label):
+    """
+    Plot 10ms ISI breakdown traces for Figure 6 A/B.
+    Shows: Control ± SEM (black), Gabazine ± SEM (magenta), Expected ± SEM (gray).
+    A supralinearity shaded region highlights where Gabazine exceeds Expected.
+    """
+    isi = 10
+    pathway_map = {
+        'ECIII Input': 'perforant',
+        'CA3 Apical Input': 'schaffer',
+        'CA3 Basal Input': 'basal'
+    }
+    pathway_key = pathway_map.get(pathway_label, 'perforant')
+
+    # genotype filter
+    if genotype in ('GNB1', 'I80T/+'):
+        genotype_targets = ['GNB1', 'I80T/+']
+    else:
+        genotype_targets = ['WT']
+
+    condition = df_traces[
+        (df_traces['Genotype'].isin(genotype_targets)) &
+        (df_traces['ISI'] == isi)
+    ].copy()
+
+    if pathway_key == 'basal':
+        subset = condition[condition['Pathway'] == 'Basal_Stratum_Oriens']
+    elif pathway_key == 'perforant':
+        subset = condition[condition['Channel'] == 'channel_1']
+        if 'Pathway' in subset.columns:
+            subset = subset[subset['Pathway'] != 'Basal_Stratum_Oriens']
+    else:  # schaffer
+        subset = condition[condition['Channel'] == 'channel_2']
+
+    if len(subset) == 0:
+        ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                transform=ax.transAxes, fontsize=8)
+        ax.axis('off')
+        return 0
+
+    # ── helper: compute mean ± SEM across cells ──────────────────────────────
+    def compute_mean_sem(df_sub, col):
+        from collections import Counter
+        traces = [r[col] for _, r in df_sub.iterrows()
+                  if isinstance(r.get(col), np.ndarray) and len(r[col]) > 0]
+        if not traces:
+            return None, None
+        target_len = Counter(len(t) for t in traces).most_common(1)[0][0]
+        arr = np.array([t for t in traces if len(t) == target_len])
+        return arr.mean(axis=0), arr.std(axis=0, ddof=1) / np.sqrt(len(arr))
+
+    gabazine, gab_sem  = compute_mean_sem(subset, 'Gabazine_Trace')
+    expected, exp_sem  = compute_mean_sem(subset, 'Expected_EPSP_Trace')
+
+    if gabazine is None or expected is None:
+        ax.axis('off')
+        return 0
+
+    # ── baseline-subtract ────────────────────────────────────────────────────
+    bl = 100
+    gabazine = gabazine - np.mean(gabazine[:bl])
+    expected = expected - np.mean(expected[:bl])
+
+    # ── trim to 300 ms @ 20 kHz ─────────────────────────────────────────────
+    display_samples = 6000
+    gabazine  = gabazine[:display_samples];  gab_sem  = gab_sem[:display_samples]
+    expected  = expected[:display_samples];  exp_sem  = exp_sem[:display_samples]
+
+    time = np.arange(display_samples) * 1000 / 20000   # ms
+    n_cells = subset['Cell_ID'].nunique()
+
+    # ── Supralinearity trace: Gabazine − Expected, in blue ──────────────────
+    supra     = gabazine - expected
+    supra_sem = np.sqrt(gab_sem**2 + exp_sem**2)   # propagate SEM
+
+    # ── 1. Expected (gray) ──────────────────────────────────────────────────
+    ax.fill_between(time, expected - exp_sem, expected + exp_sem,
+                    color='gray', alpha=0.25, edgecolor='none')
+    ax.plot(time, expected, color='gray', linewidth=0.8,
+            label='Expected - Linear Summation')
+
+    # ── 2. Gabazine / No-inhibition (magenta) ───────────────────────────────
+    ax.fill_between(time, gabazine - gab_sem, gabazine + gab_sem,
+                    color='magenta', alpha=0.20, edgecolor='none')
+    ax.plot(time, gabazine, color='magenta', linewidth=1.0,
+            label='Measured - No Inhibition')
+
+    # ── 3. Supralinearity (blue): Measured No Inhib − Expected ──────────────
+    ax.fill_between(time, supra - supra_sem, supra + supra_sem,
+                    color='steelblue', alpha=0.25, edgecolor='none')
+    ax.plot(time, supra, color='steelblue', linewidth=1.0,
+            label='Supralinearity (No Inhib − Expected)')
+    ax.axhline(0, color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+
+    ax.set_title(pathway_label, fontsize=8, fontweight='bold')
+    ax.axis('off')
+
+    # Scale bar on leftmost panel only
+    if pathway_label == 'ECIII Input':
+        add_scale_bar(ax, 50, 2, x_pos=0.8, y_pos=0.2)
+
+    return n_cells
+
+
+
+def plot_example_ISI_trace(ax, df_traces, df_amplitudes, isi, pathway_label, annotate=False):
+    """
+    Plot a single example cell trace (Control vs Gabazine) for Figure 5 Row 1.
+
+    GABAB area = ALL area where gabazine trace is below zero (baseline).
+    fill_between(time, gabazine, 0, where=gabazine<0) fills the region
+    BETWEEN the gabazine trace and y=0 — this is the correct GABAB integral.
+    """
+    # ----- HARDCODED EXAMPLE CELL (chosen for visual quality) -----
+    #20240905_c3
+    PREFERRED_CELL = {
+        'perforant': '20240905_c3',
+        'schaffer':  '20240905_c3',
+        'basal':     None,           # fall back to auto-select for basal
+    }
+
+    pathway_map = {
+        'ECIII Input':       'perforant',
+        'CA3 Apical Input':  'schaffer',
+        'CA3 Basal Input':   'basal',
+    }
+    pathway_key  = pathway_map.get(pathway_label, 'perforant')
+    pathway_name = {
+        'perforant': 'Perforant',
+        'schaffer':  'Schaffer',
+        'basal':     'Basal_Stratum_Oriens',
+    }[pathway_key]
+
+    # ----- resolve example cell -----
+    best_cell = PREFERRED_CELL.get(pathway_key)
+
+    if best_cell is None:
+        # auto-select: best combined score (GABAB area + gabazine peak)
+        sub_amp = df_amplitudes[
+            (df_amplitudes['ISI']      == isi)         &
+            (df_amplitudes['Pathway']  == pathway_name) &
+            df_amplitudes['Genotype'].isin(['WT', 'GNB1'])
+        ].copy()
+        if len(sub_amp) == 0:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                    transform=ax.transAxes, fontsize=8)
+            ax.axis('off')
+            return
+        gab_peak  = sub_amp['Gabazine_Amplitude'].fillna(0)
+        gabab_neg = sub_amp['GABAB_Area'].fillna(0).abs()
+        norm_peak = (gab_peak  - gab_peak.min())  / (gab_peak.max()  - gab_peak.min()  + 1e-9)
+        norm_neg  = (gabab_neg - gabab_neg.min()) / (gabab_neg.max() - gabab_neg.min() + 1e-9)
+        sub_amp['_score'] = norm_peak + 2.0 * norm_neg
+        best_cell = sub_amp.sort_values('_score', ascending=False).iloc[0]['Cell_ID']
+
+    # ----- fetch trace -----
+    sub_trace = df_traces[(df_traces['Cell_ID'] == best_cell) & (df_traces['ISI'] == isi)]
+    if pathway_key == 'basal':
+        sub_trace = sub_trace[sub_trace['Pathway'] == 'Basal_Stratum_Oriens']
+    elif pathway_key == 'perforant':
+        sub_trace = sub_trace[sub_trace['Channel'] == 'channel_1']
+        if 'Pathway' in sub_trace.columns:
+            sub_trace = sub_trace[sub_trace['Pathway'] != 'Basal_Stratum_Oriens']
+    else:
+        sub_trace = sub_trace[sub_trace['Channel'] == 'channel_2']
+
+    if len(sub_trace) == 0:
+        ax.text(0.5, 0.5, f'No trace\n({best_cell})', ha='center', va='center',
+                transform=ax.transAxes, fontsize=8)
+        ax.axis('off')
+        return
+
+    control  = sub_trace.iloc[0].get('Control_Trace')
+    gabazine = sub_trace.iloc[0].get('Gabazine_Trace')
+
+    if not isinstance(control, np.ndarray) or not isinstance(gabazine, np.ndarray):
+        ax.axis('off')
+        return
+
+    # ----- baseline-subtract (first 100 samples = 5 ms pre-stim) -----
+    bl = 100
+    control  = control  - np.mean(control [:bl])
+    gabazine = gabazine - np.mean(gabazine[:bl])
+
+    # ----- trim display: 500 ms for 50-ms ISI, 350 ms for 10-ms ISI -----
+    display_ms      = 550 if isi == 50 else 350
+    display_samples = int(display_ms * 20000 / 1000)
+    control  = control [:display_samples]
+    gabazine = gabazine[:display_samples]
+    time     = np.arange(len(control)) * 1000 / 20000    # → ms
+
+    # ----- plot traces -----
+    ax.plot(time, gabazine, color='magenta', linewidth=1.0, label='Measured - No Inhibition')
+    ax.plot(time, control,  color='black',   linewidth=1.0, label='Measured - With Inhibition')
+    ax.axhline(0, color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+
+    # ----- GABAB shading: fill BETWEEN gabazine trace and y=0, where gabazine < 0 -----
+    # This is the integral of all negative-going area (the slow IPSP)
+    neg_mask = gabazine < 0
+    if np.any(neg_mask):
+        ax.fill_between(time, gabazine, 0,
+                        where=neg_mask,
+                        color='gray', alpha=0.35, edgecolor='none')
+
+    # ----- annotations (only on annotated panel) -----
+    if annotate:
+        # Find the LAST local peak of the gabazine train (=summed/final response).
+        # For a multi-pulse train, we look in the second half of the train window.
+        half = len(gabazine) // 2
+        last_half = gabazine[half:]
+        last_peak_local = int(np.nanargmax(last_half))
+        gab_peak_idx  = half + last_peak_local
+        gab_peak_val  = float(gabazine[gab_peak_idx])
+        ctrl_peak_val = float(control [gab_peak_idx])
+
+        # x-coordinate of the peak (ms) + small offset for arrows
+        peak_t = float(time[gab_peak_idx])
+
+        # --- Arrow 1: Excitation (magenta) — baseline → gabazine peak ---
+        ax.annotate('', xy=(peak_t, 0), xytext=(peak_t, gab_peak_val),
+                    arrowprops=dict(arrowstyle='<->', color='magenta',
+                                   lw=1.0, mutation_scale=8))
+        ax.text(peak_t + time[-1]*0.03, gab_peak_val * 0.5,
+                'Excitation', color='magenta', fontsize=7,
+                va='center', fontweight='bold')
+
+        # --- Arrow 2: Inh(GABAA) (black) — control peak → gabazine peak ---
+        if ctrl_peak_val < gab_peak_val - 0.2:
+            ax.annotate('', xy=(peak_t, ctrl_peak_val), xytext=(peak_t, gab_peak_val),
+                        arrowprops=dict(arrowstyle='<->', color='black',
+                                       lw=1.0, mutation_scale=8))
+            ax.text(peak_t + time[-1]*0.03,
+                    (gab_peak_val + ctrl_peak_val) * 0.5,
+                    'Inh(GABAA)', color='black', fontsize=7,
+                    va='center', fontweight='bold')
+
+        # --- GABAB label inside the shaded area ---
+        if np.any(neg_mask):
+            deepest_idx = int(np.nanargmin(gabazine))
+            deepest_t   = float(time[deepest_idx])
+            deepest_v   = float(gabazine[deepest_idx])
+            # place label at the deepest point, halfway between trace and zero
+            ax.text(deepest_t, deepest_v * 0.55,
+                    'Slow IPSP Area\n(GABAB)',
+                    ha='center', va='center', fontsize=7,
+                    color='dimgray', fontweight='bold')
+
+    ax.axis('off')
+    add_scale_bar(ax, 50, 2, x_pos=0.55, y_pos=0.15)
+
+
+
+def get_n_count_string(ns_train, n_300):
+    """Formats N-counts as a range for trains and a single value for 300ms."""
+    if not ns_train:
+        return f"n={n_300}"
+    
+    min_n = min(ns_train)
+    max_n = max(ns_train)
+    
+    if min_n == max_n:
+        range_str = f"n={min_n}"
+    else:
+        range_str = f"n={min_n}-{max_n}"
+    
+    if n_300 != min_n or n_300 != max_n:
+        return f"{range_str}; 300ms n={n_300}"
+    return range_str
+
+def plot_metric_comparison(ax, df_amplitudes, pathway_name, column, ylabel, add_legend=False, df_stats=None, panel_id=None):
     """
     Plot line comparison of WT vs GNB1 for a given metric.
     WT = black, GNB1 = red
-    
-    Uses significance markers from Figure_4_Significance_Markers.csv:
-    - '*' over ISIs with significant post-hoc (FDR corrected)
-    - '#' with brackets for significant Genotype:ISI_Time interaction
-    
-    Args:
-        pathway_name: 'Perforant', 'Schaffer', or 'Basal_Stratum_Oriens'
-        column: Column name to plot (e.g., 'Gabazine_Supralinearity', 'E_I_Imbalance')
-        ylabel: Y-axis label
-        df_stats: (deprecated)
     """
     # ISI values
     isis = [300, 100, 50, 25, 10]
     
     # Collect data for WT and GNB1
-    wt_means = []
-    wt_sems = []
-    gnb1_means = []
-    gnb1_sems = []
+    wt_means, wt_sems, wt_ns = [], [], []
+    gnb1_means, gnb1_sems, gnb1_ns = [], [], []
     
     for isi in isis:
         # WT data
-        wt_data = df_amplitudes[
+        wt_subset = df_amplitudes[
             (df_amplitudes['Genotype'] == 'WT') &
             (df_amplitudes['Pathway'] == pathway_name) &
             (df_amplitudes['ISI'] == isi)
         ][column].dropna()
-        wt_means.append(wt_data.mean() if len(wt_data) > 0 else np.nan)
-        wt_sems.append(wt_data.sem() if len(wt_data) > 0 else 0)
+        wt_means.append(wt_subset.mean() if len(wt_subset) > 0 else np.nan)
+        wt_sems.append(wt_subset.sem() if len(wt_subset) > 0 else 0)
+        # N-count logic: unique Cell_ID count
+        wt_n = df_amplitudes[
+            (df_amplitudes['Genotype'] == 'WT') &
+            (df_amplitudes['Pathway'] == pathway_name) &
+            (df_amplitudes['ISI'] == isi)
+        ]['Cell_ID'].dropna().nunique()
+        wt_ns.append(wt_n)
         
         # GNB1 data
-        gnb1_data = df_amplitudes[
+        gnb1_subset = df_amplitudes[
             (df_amplitudes['Genotype'].isin(['GNB1', 'I80T/+'])) &
             (df_amplitudes['Pathway'] == pathway_name) &
             (df_amplitudes['ISI'] == isi)
         ][column].dropna()
-        gnb1_means.append(gnb1_data.mean() if len(gnb1_data) > 0 else np.nan)
-        gnb1_sems.append(gnb1_data.sem() if len(gnb1_data) > 0 else 0)
+        gnb1_means.append(gnb1_subset.mean() if len(gnb1_subset) > 0 else np.nan)
+        gnb1_sems.append(gnb1_subset.sem() if len(gnb1_subset) > 0 else 0)
+        gnb1_n = df_amplitudes[
+            (df_amplitudes['Genotype'].isin(['GNB1', 'I80T/+'])) &
+            (df_amplitudes['Pathway'] == pathway_name) &
+            (df_amplitudes['ISI'] == isi)
+        ]['Cell_ID'].dropna().nunique()
+        gnb1_ns.append(gnb1_n)
     
+    # Format labels with N-ranges
+    wt_label = f"WT ({get_n_count_string(wt_ns[1:], wt_ns[0])})"
+    gnb1_label = f"I80T/+ ({get_n_count_string(gnb1_ns[1:], gnb1_ns[0])})"
+
     # Plot lines with error bands (WT black, GNB1 red)
     ax.errorbar(range(len(isis)), wt_means, yerr=wt_sems, color='black', marker='o',
-                markersize=3, linewidth=1, label='WT', capsize=2, capthick=0.5)
+                markersize=2.5, linewidth=1.0, label=wt_label, capsize=2, capthick=0.5)
     ax.errorbar(range(len(isis)), gnb1_means, yerr=gnb1_sems, color='red', marker='o',
-                markersize=3, linewidth=1, label='I80T/+', capsize=2, capthick=0.5)
+                markersize=2.5, linewidth=1.0, label=gnb1_label, capsize=2, capthick=0.5)
     
+    # Statistical annotations (Stars for post-hoc, Hashtag for main effects)
+    if df_stats is not None:
+        # Map column names to comparison strings in markers CSV
+        comp_map = {
+            'Gabazine_Amplitude': 'Gabazine_Amplitude',
+            'Estimated_Inhibition_Amplitude': 'Inhibition_Amplitude',
+            'E_I_Imbalance': 'E_I_Imbalance',
+            'Gabazine_Supralinearity': 'Gabazine_Supralinearity',
+            'GABAB_Area': 'GABAB_Area'
+        }
+        analysis_key = comp_map.get(column, column)
+        
+        # annotate_with_sig_markers(ax, markers_df, analysis, pathway, comparison, x_coords)
+        # x_coords for line plots are range(len(isis))
+        annotate_with_sig_markers(ax, df_stats, analysis_key, pathway_name, 'WT_vs_GNB1', range(len(isis)))
+
     # Format axes
     ax.set_xticks(range(len(isis)))
     ax.set_xticklabels([str(isi) for isi in isis])
     ax.set_xlabel('ISI (ms)', fontsize=8)
-    ax.set_ylabel(ylabel)
+    ax.set_ylabel(ylabel, fontsize=8)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
+    # Line plots: use matplotlib auto-scaling (no clean_yticks — avoids decimal tick values)
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5, integer=True))
     
-    # Add zero line for supralinearity
-    if 'Supralinearity' in column:
-        ax.axhline(y=0, color='grey', linestyle='--', linewidth=0.5, alpha=0.5)
+    if np.any(np.array(wt_means) < 0) or np.any(np.array(gnb1_means) < 0):
+        ax.axhline(0, color='grey', linestyle='--', linewidth=0.5, alpha=0.5)
     
-    # Add legend if requested
     if add_legend:
-        ax.legend(frameon=False, loc='best')
-    
-    # --- Load significance markers from FDR-corrected file ---
-    
-    # Determine Analysis Name
-    if 'Supralinearity' in column:
-        analysis_name = 'Gabazine_Supralinearity'
-    elif 'Imbalance' in column:
-        analysis_name = 'E_I_Imbalance'
-    else:
-        analysis_name = None
+        ax.legend(frameon=False, loc='best', fontsize=6)
         
-    if analysis_name:
-        df_markers = load_figure_4_significance_markers()
-        markers = get_figure_4_markers(df_markers, analysis_name, pathway_name, 'WT_vs_GNB1')
-        
-        # Calculate y_max for positioning
-        valid_wt = [m + s for m, s in zip(wt_means, wt_sems) if not np.isnan(m)]
-        valid_gnb1 = [m + s for m, s in zip(gnb1_means, gnb1_sems) if not np.isnan(m)]
-        
-        overall_max = -np.inf
-        if valid_wt: overall_max = max(overall_max, max(valid_wt))
-        if valid_gnb1: overall_max = max(overall_max, max(valid_gnb1))
-        
-        if overall_max == -np.inf: overall_max = 0
-        
-        # Add asterisks
-        for i, isi in enumerate(isis):
-            marker = markers['isi_markers'].get(isi, '')
-            if marker == '*':
-                # For supralinearity/imbalance, place above the points
-                y_pos = overall_max + abs(overall_max) * 0.1 if overall_max != 0 else 0.5
-                ax.text(i, y_pos, '*', ha='center', va='bottom',
-                       fontsize=10, fontweight='bold', color='black')
-        
-        # Add Genotype hashtag with brackets
-        main_marker = markers.get('main_effect', '')
-        if main_marker == '#':
-            bracket_y = overall_max + abs(overall_max) * 0.25 if overall_max != 0 else 1.0
-            
-            # Draw horizontal line
-            ax.plot([0, len(isis)-1], [bracket_y, bracket_y], 'k-', linewidth=0.8)
-            # Draw vertical ticks
-            ax.plot([0, 0], [bracket_y, bracket_y - abs(overall_max)*0.03], 'k-', linewidth=0.8)
-            ax.plot([len(isis)-1, len(isis)-1], [bracket_y, bracket_y - abs(overall_max)*0.03], 'k-', linewidth=0.8)
-            
-            # Add hashtag symbol
-            ax.text(len(isis)/2 - 0.5, bracket_y + abs(overall_max)*0.03, '#',
-                   ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
+    return ax.get_ylim()
 
 def plot_supplemental_figure_1_helper(isi_order, metrics, pathways, genotypes, df, axes):
     for row_idx, genotype in enumerate(genotypes):
@@ -2871,23 +3438,6 @@ def plot_supplemental_figure_1_helper(isi_order, metrics, pathways, genotypes, d
             # Add horizontal line at zero
             ax.axhline(y=0, color='grey', linestyle='--', linewidth=1)
 
-            # --- Calculate and Plot Inhibition (Control - Gabazine) ---
-            # Calculated as difference per cell (paired) to effectively capture partial data
-            # Use a copy to avoid SettingWithCopy warnings
-            subset_calc = subset.copy()
-            
-            # Calculate difference (Control - Gabazine)
-            # Result will be negative (representing the inhibitory component)
-            subset_calc['Inhibition'] = subset_calc['Control_Amplitude'] - subset_calc['Gabazine_Amplitude']
-            
-            # Group by ISI
-            grouped_inh = subset_calc.groupby('ISI')['Inhibition'].agg(['mean', 'sem', 'count']).reindex(isi_order)
-            
-            if grouped_inh['mean'].notna().any():
-                ax.errorbar(range(len(isi_order)), grouped_inh['mean'], yerr=grouped_inh['sem'],
-                           label=None, color='skyblue', marker='o', markersize=3, capsize=3,
-                           linewidth=1.0, linestyle='-')
-            
             # Styling
             ax.set_xticks(range(len(isi_order)))
             ax.set_xticklabels(isi_order)
@@ -3234,10 +3784,10 @@ def plot_gabab_traces(ax, gabab_traces, pathway_key, title, label, gabab_metrics
         
         time = np.arange(len(wt_mean)) / 20  # 20 kHz
         
-        ax.fill_between(time, wt_mean - wt_sem, wt_mean + wt_sem, color='black', alpha=0.3)
+        ax.fill_between(time, wt_mean - wt_sem, wt_mean + wt_sem, color='black', alpha=0.3, edgecolor='none')
         ax.plot(time, wt_mean, 'k-', linewidth=1, label=f'WT (n={len(wt_traces)})')
         
-        ax.fill_between(time, gnb1_mean - gnb1_sem, gnb1_mean + gnb1_sem, color='red', alpha=0.3)
+        ax.fill_between(time, gnb1_mean - gnb1_sem, gnb1_mean + gnb1_sem, color='red', alpha=0.3, edgecolor='none')
         ax.plot(time, gnb1_mean, 'r-', linewidth=1, label=f'GNB1 (n={len(gnb1_traces)})')
         
         add_scale_bar(ax, 50, 1, x_pos=0.85, y_pos=0.15)
@@ -3255,7 +3805,7 @@ def plot_gabab_traces(ax, gabab_traces, pathway_key, title, label, gabab_metrics
         sem_trace = np.std(traces_to_plot, axis=0) / np.sqrt(len(traces_to_plot))
         time = np.arange(len(mean_trace)) / 20
         
-        ax.fill_between(time, mean_trace - sem_trace, mean_trace + sem_trace, color=color, alpha=0.3)
+        ax.fill_between(time, mean_trace - sem_trace, mean_trace + sem_trace, color=color, alpha=0.3, edgecolor='none')
         ax.plot(time, mean_trace, color=color, linewidth=1, label=f'{geno} (n={len(traces_to_plot)})')
         
         add_scale_bar(ax, 50, 1, x_pos=0.85, y_pos=0.15)
@@ -3327,21 +3877,22 @@ def plot_gabab_vm_change(ax, vm_csv_path, label, df_stats=None):
         ax.set_title('Resting Potential Change', fontsize=8, fontweight='bold')
         ax.set_box_aspect(1)
         
-        # Add statistical annotation if available
-        if df_stats is not None:
-            panel_stats = df_stats[df_stats['Figure_Panel'] == f'Fig 5{label}']
-            if not panel_stats.empty:
-                p_val = panel_stats.iloc[0]['P_Value']
-                sig = panel_stats.iloc[0]['Significance']
-                
-                if sig != 'ns':
-                    # Add significance marker above bars
-                    y_max = max(df_vm.groupby('Genotype')['Voltage Change'].mean())
-                    y_pos = y_max + 0.5
-                    ax.text(0.5, y_pos, sig, ha='center', va='bottom', fontsize=9, fontweight='bold')
-                    
-                    # Draw comparison line
-                    ax.plot([0, 1], [y_pos-0.2, y_pos-0.2], 'k-', linewidth=0.8)
+        # Add statistical annotation from Figure 7 stats
+        if df_stats is not None and 'Drug' in df_stats.columns:
+            bac_row = df_stats[(df_stats['Drug'] == 'Baclofen') &
+                               (df_stats['Comparison'].str.contains('ΔVm', na=False))]
+            if not bac_row.empty:
+                sig = bac_row.iloc[0].get('Significance', 'ns')
+                wt_vals   = df_vm[df_vm['Genotype'] == 'WT']['Voltage Change'].dropna()
+                gnb1_vals = df_vm[df_vm['Genotype'] == 'I80T/+']['Voltage Change'].dropna()
+                if len(wt_vals) > 0 and len(gnb1_vals) > 0:
+                    # Values are negative (hyperpolarisation) — annotate below bars
+                    y_min = min(wt_vals.mean(), gnb1_vals.mean())
+                    y_pos = y_min * 1.20   # 20% below the most negative mean
+                    ax.text(0.5, y_pos, sig, ha='center', va='top', fontsize=10,
+                            fontweight='bold')
+                    if sig != 'ns':
+                        ax.plot([0, 1], [y_pos + 0.5, y_pos + 0.5], 'k-', lw=0.8)
     else:
         ax.text(0.5, 0.5, 'No Vm Data', ha='center', va='center')
         ax.axis('off')
@@ -3387,6 +3938,11 @@ def plot_baclofen_vm_traces(ax, vm_traces_path, label='H'):
     gnb1_row = vm_change_df[vm_change_df['Cell_ID'] == gnb1_id]
     gnb1_delta = gnb1_row['Voltage Change'].values[0] if not gnb1_row.empty else 0
 
+    # Add legend at the top left manually
+    ax.plot([], [], color='black', label='Gabazine')
+    ax.plot([], [], color='gray', label='Gabazine + Baclofen')
+    ax.legend(frameon=False, loc='upper left', fontsize=7, bbox_to_anchor=(0.0, 1.25))
+
     # PLOT STACKED
     offset = 20 # mV shift for GNB1
     
@@ -3421,19 +3977,32 @@ def plot_baclofen_vm_traces(ax, vm_traces_path, label='H'):
             
             # Dashed baselines
             gab_base_plot = np.mean(gab_trace[:1000])
-            ax.axhline(gab_base_plot, color=base_color, linestyle='--', linewidth=0.5, alpha=0.5)
+            bac_base_plot = np.mean(bac_trace[:1000])
+            ax.plot([-5, 50], [gab_base_plot, gab_base_plot], color=base_color, linestyle='--', linewidth=0.5, alpha=0.5)
+            ax.plot([-5, 50], [bac_base_plot, bac_base_plot], color=bac_color, linestyle='--', linewidth=0.5, alpha=0.5)
             
             # Label Genotype
-            ax.text(0, gab_base_plot + 4, geno, fontsize=8, fontweight='bold', color=base_color)
+            display_geno = 'I80T/+' if geno == 'GNB1' else 'WT'
+            ax.text(45, gab_base_plot + 1, display_geno, fontsize=8, fontweight='bold', color=base_color, ha='right')
             
-            # Delta Label
-            mid_y = (gab_base_plot + np.mean(bac_trace[:1000])) / 2
-            ax.annotate(f'ΔVm = -{delta:.1f} mV', xy=(280, mid_y), fontsize=6, 
-                        color='dimgray', ha='right', va='center')
+            if geno == 'WT':
+                # Delta Label and Arrow
+                ax.text(-2, gab_base_plot, 'Resting\n$V_m$', fontsize=7, ha='right', va='center')
+                # Arrow for delta Vm
+                ax.annotate('', xy=(25, bac_base_plot), xytext=(25, gab_base_plot),
+                            arrowprops=dict(arrowstyle="->", color='black', lw=0.8))
+                ax.text(27, (gab_base_plot + bac_base_plot)/2, '$\Delta V_m$', fontsize=7, va='center')
 
     # Add Scale Bar (L-SHAPE)
     if all_y:
         y_min_total = min(all_y)
+        ax.set_xlim(-15, 60)
+        overall_range = np.max(all_y) - y_min_total
+        center = (np.max(all_y) + y_min_total)/2
+        # Expand ylim to compress traces visually
+        ax.set_ylim(center - overall_range * 1.5 - 5, center + overall_range * 1.5 + 5)
+        
+        ax.axis('off')
         
         # Position: Bottom Right (within 50 ms window)
         bar_x = 30
@@ -3500,7 +4069,7 @@ def plot_fi_curve_gabab(ax, df, geno, title):
 # FIGURE 6: THETA BURST / DENDRITIC EXCITABILITY PLOTTING FUNCTIONS
 # ==================================================================================================
 
-def plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq=20000, start_idx=10000, end_idx=30000):
+def plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq=20000, start_idx=10000, end_idx=30000, start_row=0, label="A"):
     """
     Plot raw theta burst traces for Panel A.
     
@@ -3528,20 +4097,33 @@ def plot_theta_raw_traces(fig, gs, raw_data, cols, col_titles, acq_freq=20000, s
             if row_idx == 0:
                 ax.set_title(col_titles[i], fontsize=9)
             if row_idx == 0 and i == 0:
-                add_subplot_label(ax, "A")
+                add_subplot_label(ax, label)
+            
+            # Add row labels on the far left
+            if i == 0:
+                row_label = "WT" if geno == "WT" else "I80T/+"
+                ax.text(-0.3, 0.5, row_label, transform=ax.transAxes, ha='right', va='center', 
+                        fontweight='bold', fontsize=9, color='k' if geno == 'WT' else 'r')
             
             if raw_key in raw_data and pathway in raw_data[raw_key]:
                 trace = raw_data[raw_key][pathway]
                 if len(trace) > len(time):
                     trace = trace[:len(time)]
-                ax.plot(time[:len(trace)], trace, color=color, linewidth=0.8, label=f'{geno} Raw')
+                
+                # BASELINE trace to zero
+                trace = trace - np.mean(trace[:min(len(trace), 2000)]) # first 100ms
+                
+                ax.plot(time[:len(trace)], trace, color=color, linewidth=0.25, label=f'{geno} Raw')
+                
+                # DRAW dotted line at 20mV relative to baseline (indicated as 20mV on scale)
+                ax.axhline(20, color='gray', linestyle=':', linewidth=0.8, alpha=0.8)
             
             ax.axis('off')
             if row_idx == 0 and i == 2:
                 add_scale_bar(ax, 200, 10, x_pos=0.7, y_pos=0.1)
 
 
-def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, start_idx=10000, end_idx=30000):
+def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, start_idx=10000, end_idx=30000, start_row=2, label="B"):
     """
     Plot averaged theta traces with SEM and expected traces for Panel B.
     
@@ -3589,8 +4171,14 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
         for i, pathway in enumerate(cols):
             ax = fig.add_subplot(gs[row_idx, i])
             
-            if row_idx == 2 and i == 0:
-                add_subplot_label(ax, "B")
+            if row_idx == start_row and i == 0:
+                add_subplot_label(ax, label)
+            
+            # Add row labels on the far left
+            if i == 0:
+                row_label = "WT" if geno == "WT" else "I80T/+"
+                ax.text(-0.3, 0.5, row_label, transform=ax.transAxes, ha='right', va='center', 
+                        fontweight='bold', fontsize=9, color='k' if geno == 'WT' else 'r')
             
             # Plot measured trace with SEM
             if stats_key in processed_stats and pathway in processed_stats[stats_key]:
@@ -3610,8 +4198,8 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
                 mean_ds = mean_trace[::ds]
                 sem_ds = sem_trace[::ds]
                 
-                ax.fill_between(t_ds, mean_ds - sem_ds, mean_ds + sem_ds, color=color, alpha=0.3)
-                ax.plot(t_ds, mean_ds, color=color, linewidth=0.8, label=f'{geno}')
+                ax.fill_between(t_ds, mean_ds - sem_ds, mean_ds + sem_ds, color=color, alpha=0.3, edgecolor='none')
+                ax.plot(t_ds, mean_ds, color=color, linewidth=0.25, label=f'{geno}')
                 
                 # Plot Expected EPSP (Now per pathway)
                 if 'Expected_mean' in p_stats:
@@ -3628,8 +4216,11 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
                     exp_sem_ds = exp_sem[::10]
                     
                     # Expected fill between (grey)
-                    ax.fill_between(t_ds, exp_ds - exp_sem_ds, exp_ds + exp_sem_ds, color='grey', alpha=0.3)
-                    ax.plot(t_ds, exp_ds, color='grey', linestyle='-', linewidth=0.8, label='Expected')
+                    ax.fill_between(t_ds, exp_ds - exp_sem_ds, exp_ds + exp_sem_ds, color='grey', alpha=0.3, edgecolor='none')
+                    ax.plot(t_ds, exp_ds, color='grey', linestyle='-', linewidth=0.25, label='Expected')
+                
+                # Add threshold line (20mV)
+                ax.axhline(20, color='gray', linestyle=':', linewidth=0.8, alpha=0.8)
             
             ax.set_ylim(panel_b_ymin, panel_b_ymax)
             ax.axis('off')
@@ -3642,7 +4233,7 @@ def plot_theta_averaged_traces(fig, gs, processed_stats, cols, acq_freq=20000, s
                 ax.legend(frameon=False, fontsize=6, loc='upper right')
 
 
-def plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats=None):
+def plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats=None, start_row=4, label="C", square=True):
     """
     Plot plateau area bar plots for Panel C.
     
@@ -3658,25 +4249,30 @@ def plot_plateau_area_bars_fig6(fig, gs, plateau_df, df_stats=None):
     pathways = ['Perforant', 'Schaffer', 'Both']
     pathway_labels = ['Perforant (ECIII)', 'CA3 (Schaffer)', 'Both Pathways']
     
-    # Calculate global max for shared Y-axis
+    # Calculate global range for shared Y-axis
+    global_min = plateau_filt['Plateau_Area'].min()
     global_max = plateau_filt['Plateau_Area'].max()
-    y_lim_top = global_max * 1.3  # Add headroom for stats
     
-    for p_idx, (pathway, label) in enumerate(zip(pathways, pathway_labels)):
-        ax_bar = fig.add_subplot(gs[4, p_idx])
+    # Increase range slightly for stats
+    y_range = global_max - global_min
+    y_lim_top = global_max + y_range * 0.3
+    y_lim_bottom = min(0, global_min - y_range * 0.1) # Ensure we show at least down to 0, or further if negative
+    
+    for p_idx, (pathway, label_p) in enumerate(zip(pathways, pathway_labels)):
+        ax_bar = fig.add_subplot(gs[start_row, p_idx])
         if p_idx == 0:
-            add_subplot_label(ax_bar, "C")
+            add_subplot_label(ax_bar, label)
         
         pathway_data = plateau_filt[plateau_filt['Pathway'] == pathway].copy()
         
-        # N counts will be calculated automatically by plot_bar_scatter from the data
         plot_bar_scatter(ax_bar, pathway_data, 'Genotype', 'Plateau_Area', 'Genotype', order=['WT', 'I80T/+'], unique_col='Cell_ID')
         
-        # ax_bar.set_title(label, fontsize=8, fontweight='bold') # Removed title
-        ax_bar.set_ylim(0, y_lim_top)
+        if square:
+            ax_bar.set_box_aspect(1)
         
-        # Add more Y ticks
-        ax_bar.yaxis.set_major_locator(ticker.MaxNLocator(nbins=3))
+        # Each pathway scales independently — apply_clean_yticks already run inside plot_bar_scatter
+        # Ensure bottom is at or below 0 (some plateau areas may be slightly negative)
+        apply_clean_yticks(ax_bar)
         
         if p_idx == 0:
             ax_bar.set_ylabel('Plateau Area\n(mV·s)', fontsize=8)
@@ -3788,7 +4384,7 @@ def plot_example_difference_traces(fig, gs, supralin_traces, master_df, start_id
         ax_d.axis('off')
 
 
-def plot_averaged_difference_traces(fig, gs, supralin_traces, master_df, start_idx=9000, end_idx=30000):
+def plot_averaged_difference_traces(fig, gs, supralin_traces, master_df, start_idx=9000, end_idx=30000, start_row=6, label="E"):
     """
     Plot averaged supralinearity (difference) traces for WT vs GNB1 for Panel E.
     
@@ -3800,9 +4396,9 @@ def plot_averaged_difference_traces(fig, gs, supralin_traces, master_df, start_i
         start_idx, end_idx: indices for time window
     """
     for col_idx, pathway in enumerate(['Perforant', 'Schaffer', 'Both Pathways']):
-        ax_e = fig.add_subplot(gs[6, col_idx])
+        ax_e = fig.add_subplot(gs[start_row, col_idx])
         if col_idx == 0:
-            add_subplot_label(ax_e, "E")
+            add_subplot_label(ax_e, label)
         
         # Collect difference traces per genotype
         wt_diffs = []
@@ -3843,8 +4439,8 @@ def plot_averaged_difference_traces(fig, gs, supralin_traces, master_df, start_i
             wt_mean_ds = wt_mean[::ds]
             wt_sem_ds = wt_sem[::ds]
             
-            ax_e.fill_between(time_ds, wt_mean_ds - wt_sem_ds, wt_mean_ds + wt_sem_ds, color='k', alpha=0.3)
-            ax_e.plot(time_ds, wt_mean_ds, 'k', linewidth=0.8, label=f'WT (n={len(wt_diffs)})')
+            ax_e.fill_between(time_ds, wt_mean_ds - wt_sem_ds, wt_mean_ds + wt_sem_ds, color='k', alpha=0.3, edgecolor='none')
+            ax_e.plot(time_ds, wt_mean_ds, 'k', linewidth=0.25, label=f'WT (n={len(wt_diffs)})')
         
         # Average and plot GNB1
         if gnb1_diffs:
@@ -3859,8 +4455,8 @@ def plot_averaged_difference_traces(fig, gs, supralin_traces, master_df, start_i
             gnb1_mean_ds = gnb1_mean[::ds]
             gnb1_sem_ds = gnb1_sem[::ds]
             
-            ax_e.fill_between(time_g_ds, gnb1_mean_ds - gnb1_sem_ds, gnb1_mean_ds + gnb1_sem_ds, color='r', alpha=0.3)
-            ax_e.plot(time_g_ds, gnb1_mean_ds, 'r', linewidth=0.8, label=f'GNB1 (n={len(gnb1_diffs)})')
+            ax_e.fill_between(time_g_ds, gnb1_mean_ds - gnb1_sem_ds, gnb1_mean_ds + gnb1_sem_ds, color='r', alpha=0.3, edgecolor='none')
+            ax_e.plot(time_g_ds, gnb1_mean_ds, 'r', linewidth=0.25, label=f'GNB1 (n={len(gnb1_diffs)})')
         
         # ax_e.set_title(pathway.replace('Both Pathways', 'Both'), fontsize=8, fontweight='bold') # Removed title
         ax_e.axis('off')
@@ -3921,7 +4517,7 @@ def plot_supralinear_peak_cycles(fig, gs, df_peaks, df_stats=None, df_anova=None
         ax_f.set_ylim(f_ylim_bottom, f_ylim_top)
         
         # Add more Y ticks
-        ax_f.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
+        apply_clean_yticks(ax_f)
         
         pathway_data = df_peaks[df_peaks['Pathway'] == pathway]
         
@@ -4050,7 +4646,7 @@ def plot_single_genotype_gabazine(ax, df_amplitudes, pathway_name, genotype, df_
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.legend(frameon=False, loc='best', fontsize=7)
-def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None):
+def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None, start_row=7, label="F", square=True):
     """
     Plot supralinear total AUC bar plots for Panel F (like Panel C).
     
@@ -4072,10 +4668,10 @@ def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None):
     y_lim_bottom = global_min - (y_range * 0.1) if global_min < 0 else 0
     y_lim_top = global_max + (y_range * 0.3)  # Extra room at top for significance bars
     
-    for p_idx, (pathway, label) in enumerate(zip(pathways, pathway_labels)):
-        ax_bar = fig.add_subplot(gs[7, p_idx])
+    for p_idx, (pathway, label_p) in enumerate(zip(pathways, pathway_labels)):
+        ax_bar = fig.add_subplot(gs[start_row, p_idx])
         if p_idx == 0:
-            add_subplot_label(ax_bar, "F")
+            add_subplot_label(ax_bar, label)
         
         pathway_data = auc_total_df[auc_total_df['Pathway'] == pathway].copy()
         
@@ -4094,11 +4690,13 @@ def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None):
 
         plot_bar_scatter(ax_bar, pathway_data, 'Genotype', 'Total_AUC', 'Genotype', order=['WT', 'I80T/+'], unique_col='Cell_ID', override_n_counts=n_override)
         
+        if square:
+            ax_bar.set_box_aspect(1)
+        
         # ax_bar.set_title(label, fontsize=8, fontweight='bold') # Removed title
         ax_bar.set_ylim(y_lim_bottom, y_lim_top)
         
-        # Add more Y ticks
-        ax_bar.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
+        apply_clean_yticks(ax_bar)
         
         if p_idx == 0:
             ax_bar.set_ylabel('Supralinear AUC\\n(mV·s)', fontsize=8)
@@ -4143,9 +4741,9 @@ def plot_supralinear_auc_bars_fig6(fig, gs, auc_total_df, df_stats=None):
 # DATA PREPARATION HELPERS
 # -------------------------------------------------------------------------
 
-def prepare_figure_6_data(df_auc_total=None):
+def prepare_figure_7_data(df_auc_total=None):
     """
-    Loads and processes data for Figure 6 (Panels A, B, and C/F filtering).
+    Loads and processes data for Figure 7 (Panels A, B, and C/F filtering).
     Moves calculation logic out of generate_figures.py.
     
     Returns:
@@ -4174,7 +4772,7 @@ def prepare_figure_6_data(df_auc_total=None):
     
     # 2. Load Data for Panel A (Raw Traces)
     # -------------------------------------------------------------------------
-    example_traces_path = os.path.join('paper_data', 'Plateau_data', 'Figure6_Example_Traces.pkl')
+    example_traces_path = os.path.join('paper_data', 'Plateau_data', 'Figure7_Example_Traces.pkl')
     raw_data = {'WT': {}, 'I80T/+': {}}
     
     if os.path.exists(example_traces_path):
@@ -4256,36 +4854,35 @@ def prepare_figure_6_data(df_auc_total=None):
                 processed_stats[geno][pathway]['Expected_mean'] = np.mean(arr, axis=0)
                 processed_stats[geno][pathway]['Expected_sem'] = np.std(arr, axis=0) / np.sqrt(len(arr))
 
-    # Load Plateau Data (C) and Filter F to match Panel C cell set per pathway
+    # Load Plateau Data for Panel E (Plateau Area — uses 20mV threshold)
     plateau_csv_path = os.path.join('paper_data', 'Plateau_data', 'Plateau_data.csv')
     plateau_df = pd.DataFrame()
     if os.path.exists(plateau_csv_path):
         plateau_df = pd.read_csv(plateau_csv_path)
         plateau_df['Cell_ID'] = plateau_df['Cell_ID'].astype(str)
-        
-        # Apply SAME filtering as Analyze_Stats_Python.py Panel C
-        valid_conditions = ['Gabazine_Only', 'Before_ML297', 'Before_ETX']
-        plateau_filtered = plateau_df[plateau_df['Condition'].isin(valid_conditions)].dropna(subset=['Plateau_Area']).copy()
-        
-        # Build set of (Cell_ID, Pathway) from Panel C per pathway
-        # 'Single Pathway Plateau Inclusion' already handled during export for Schaffer/Perforant
-        plateau_pairs = set()
-        for _, row in plateau_filtered.iterrows():
-            c_id = str(row['Cell_ID'])
-            path = row['Pathway']
-            if path == 'Both': path = 'Both Pathways'
-            plateau_pairs.add((c_id, path))
-        
-        # Filter df_auc_total to keep only rows present in filtered plateau_df
-        if df_auc_total is not None and not df_auc_total.empty:
-            df_auc_total['Cell_ID'] = df_auc_total['Cell_ID'].astype(str)
-            mask = df_auc_total.apply(
-                lambda row: (str(row['Cell_ID']), row['Pathway']) in plateau_pairs, axis=1
+
+    # Panel D (Supralinear AUC) uses cells from Supralinear_AUC_Total.csv,
+    # filtered by master_df inclusion criteria:
+    #   1. 'Inclusion' column must contain 'plateau' (all pathways)
+    #   2. 'Single Pathway Plateau Inclusion' == 'Yes' (Schaffer/Perforant — enforced at export time)
+    # Panel D is INDEPENDENT of Panel E — no 20mV plateau threshold cross-filter.
+    if df_auc_total is not None and not df_auc_total.empty:
+        df_auc_total['Cell_ID'] = df_auc_total['Cell_ID'].astype(str)
+        # Safety filter: only keep cells whose master_df Inclusion contains 'plateau'
+        if os.path.exists('master_df.csv'):
+            mdf = pd.read_csv('master_df.csv', low_memory=False)
+            plateau_ok = set(
+                mdf[mdf['Inclusion'].astype(str).str.contains('plateau', case=False, na=False)]['Cell_ID'].astype(str)
             )
-            df_auc_total = df_auc_total[mask].copy()
-            print(f"  Panel F N-Matching: Filtered to {len(df_auc_total)} rows (matching Panel C subset).")
+            before = len(df_auc_total)
+            df_auc_total = df_auc_total[df_auc_total['Cell_ID'].isin(plateau_ok)].copy()
+            print(f"  Panel D: {len(df_auc_total)} rows for Supralinear AUC (filtered {before - len(df_auc_total)} non-plateau cells).")
+        else:
+            print(f"  Panel D: Using {len(df_auc_total)} rows for Supralinear AUC (master_df not found for filtering).")
+
 
     return raw_data, processed_stats, plateau_df, df_auc_total, supralin_traces
+
 
 def plot_girk_delta_bars(ax, df_delta, drug_name, stats_df=None):
     """
@@ -4417,12 +5014,12 @@ def plot_traces_GIRK_v2(ax, traces_before, traces_after, genotype, drug_name,
         
         # Plot Before (Black)
         ax.fill_between(time, before_mean - before_sem, before_mean + before_sem, 
-                        color=color_before, alpha=0.3)
+                        color=color_before, alpha=0.3, edgecolor='none')
         ax.plot(time, before_mean, color=color_before, linewidth=1.2, label='Before')
         
         # Plot After (Custom Color)
         ax.fill_between(time, after_mean - after_sem, after_mean + after_sem, 
-                        color=color_after, alpha=0.3)
+                        color=color_after, alpha=0.3, edgecolor='none')
         ax.plot(time, after_mean, color=color_after, linewidth=1.2, label=f'After {drug_name}')
         
         if add_scale:
@@ -4431,6 +5028,9 @@ def plot_traces_GIRK_v2(ax, traces_before, traces_after, genotype, drug_name,
         ax.set_title(genotype, fontweight='bold', fontsize=9)
         if add_legend:
              ax.legend(frameon=False, fontsize=7, loc='upper right')
+             
+        ax.axhline(20, color='gray', linestyle=':', linewidth=1.0, zorder=0)
+        ax.text(time[0], 20, '20 mV', va='center', ha='right', fontsize=6, color='gray')
              
         ax.axis('off')
     else:
@@ -4596,4 +5196,342 @@ def plot_PPR_examples(data_dir, df, output_dir):
         plt.savefig(example_path, dpi=300)
         plt.close()
         print(f"✓ Plotted {plotted} example traces to {example_path}")
+
+
+# ==================================================================================================
+# FIGURE 7: GIRK PHARMACOLOGY & UNITARY GABAB
+# ==================================================================================================
+
+def plot_unitary_gabab_traces_by_pathway(ax, traces_pkl_path, genotype, pathway, label, drugs=None):
+    """
+    Plot overlaid unitary GABAB traces for one genotype + one pathway.
+    Colors are consistent with the rest of Figure 7:
+      - Gabazine baseline: black (WT) / dark red (GNB1)
+      - ML297: gold  (matches Panel F after_color)
+      - ETX:   cyan  (matches Panel H after_color)
+    Axes are hidden; a scale bar is added instead.
+    """
+    add_subplot_label(ax, label)
+    if not os.path.exists(traces_pkl_path):
+        ax.text(0.5, 0.5, 'No Traces Data', ha='center', va='center', transform=ax.transAxes)
+        return
+
+    with open(traces_pkl_path, 'rb') as f:
+        traces_dict = pickle.load(f)
+
+    gab_traces, ml297_traces, etx_traces = [], [], []
+
+    for cid, info in traces_dict.items():
+        if info['Genotype'] != genotype:
+            continue
+        for cond, paths in info['Traces'].items():
+            if not isinstance(paths, dict): continue
+            trace = paths.get(pathway)
+            if trace is None: continue
+            c_lower = cond.lower()
+            if 'ml297' in c_lower or 'ml-297' in c_lower:
+                ml297_traces.append(trace)
+            elif 'etx' in c_lower:
+                etx_traces.append(trace)
+            elif 'gabazine' in c_lower or 'control' in c_lower:
+                gab_traces.append(trace)
+
+    if not any([gab_traces, ml297_traces, etx_traces]):
+        ax.text(0.5, 0.5, f'No {genotype}/{pathway} traces',
+                ha='center', va='center', transform=ax.transAxes, fontsize=7)
+        return
+
+    dt = 1 / 20  # ms (20 kHz sampling)
+    is_wt = (genotype == 'WT')
+
+    # Gabazine: genotype color. ML297: gold. ETX: cyan. Consistent with F & H.
+    gab_color = 'black' if is_wt else '#8B0000'
+    
+    configs = []
+    if drugs is None or 'Gabazine' in drugs:
+        configs.append((gab_traces, gab_color, f'{genotype} Gabazine'))
+    if drugs is None or 'ML297' in drugs:
+        configs.append((ml297_traces, 'goldenrod', f'{genotype} ML297'))
+    if drugs is None or 'ETX' in drugs:
+        configs.append((etx_traces, 'darkcyan', f'{genotype} ETX'))
+
+    all_values = []
+    for traces, color, lbl in configs:
+        if not traces: continue
+        min_len = min(len(t) for t in traces)
+        arr = np.array([np.array(t[:min_len]) for t in traces])
+        mean = np.mean(arr, axis=0)
+        sem  = np.std(arr, axis=0) / np.sqrt(len(arr))
+        time = np.arange(len(mean)) * dt
+        ax.plot(time, mean, color=color, label=f'{lbl} (n={len(traces)})', lw=1.2)
+        ax.fill_between(time, mean - sem, mean + sem, color=color, alpha=0.15)
+        all_values.extend(mean.tolist())
+
+    ax.set_xlim(-10, 350)
+    ax.axhline(0, color='lightblue', lw=0.5, zorder=0)
+    pathway_label = 'Perforant Path' if pathway == 'Perforant' else 'Schaffer Collateral'
+    ax.set_title(f'{genotype} – {pathway_label}', fontsize=8, fontweight='bold')
+    ax.legend(frameon=False, fontsize=5.5, loc='upper right')
+
+    # Remove all axes
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    # Adjust ylim to make trace larger (less expansion than 1.5)
+    if all_values:
+        y_min = min(all_values)
+        y_max = max(all_values)
+        overall_range = y_max - y_min
+        center = (y_max + y_min) / 2
+        # Use 1.2 instead of 1.5 to make it larger
+        ax.set_ylim(center - overall_range * 1.2 - 0.5, center + overall_range * 1.2 + 0.5)
+        
+        sb_x = 250
+        sb_y = center - overall_range * 1.0 - 0.2
+        ax.plot([sb_x, sb_x + 50], [sb_y, sb_y], 'k-', lw=1.5, clip_on=False)
+        ax.plot([sb_x + 50, sb_x + 50], [sb_y, sb_y + 2], 'k-', lw=1.5, clip_on=False)
+        ax.text(sb_x + 25, sb_y - overall_range * 0.1, '50 ms', ha='center', va='top', fontsize=5.5)
+        ax.text(sb_x + 55, sb_y + 1, '2 mV', ha='left', va='center', fontsize=5.5)
+
+
+def plot_unitary_gabab_traces_combined(ax, traces_pkl_path, drug_name, pathway_name, label):
+    """
+    Plot overlaid unitary GABAB traces for BOTH genotypes for one pathway.
+    """
+    add_subplot_label(ax, label)
+    if not os.path.exists(traces_pkl_path):
+        ax.text(0.5, 0.5, 'No Traces Data', ha='center', va='center', transform=ax.transAxes)
+        return
+
+    import pickle
+    import numpy as np
+    import pandas as pd
+    with open(traces_pkl_path, 'rb') as f:
+        traces_dict = pickle.load(f)
+
+    wt_gab, wt_drug, gnb_gab, gnb_drug = [], [], [], []
+
+    for cid, info in traces_dict.items():
+        geno = info['Genotype']
+        for cond, paths in info['Traces'].items():
+            if not isinstance(paths, dict): continue
+            trace = paths.get(pathway_name)
+            if trace is None: continue
+            c_lower = cond.lower()
+            
+            if drug_name.lower() in c_lower:
+                if geno == 'WT': wt_drug.append(trace)
+                else: gnb_drug.append(trace)
+            elif 'gabazine' in c_lower or 'control' in c_lower:
+                if geno == 'WT': wt_gab.append(trace)
+                else: gnb_gab.append(trace)
+
+    dt = 1 / 20  # ms
+    configs = [
+        (wt_gab, 'black', 'WT Gabazine', '-'),
+        (wt_drug, 'gray', f'WT {drug_name}', '--'), 
+        (gnb_gab, '#8B0000', 'I80T/+ Gabazine', '-'),
+        (gnb_drug, 'salmon', f'I80T/+ {drug_name}', '--'),
+    ]
+
+    all_values = []
+    for traces, color, lbl, ls in configs:
+        if not traces: continue
+        min_len = min(len(t) for t in traces)
+        arr = np.array([np.array(t[:min_len]) for t in traces])
+        mean = np.mean(arr, axis=0)
+        sem  = np.std(arr, axis=0) / np.sqrt(len(arr))
+        time = np.arange(len(mean)) * dt
+        ax.plot(time, mean, color=color, label=f'{lbl}', lw=1.2, linestyle=ls)
+        # Use fill_between with a lighter alpha for combined plot visibility
+        ax.fill_between(time, mean - sem, mean + sem, color=color, alpha=0.1)
+        all_values.extend(mean.tolist())
+
+    ax.set_xlim(0, 310)
+    ax.axhline(0, color='lightblue', lw=0.5, zorder=0)
+    path_label = 'Perforant Path' if pathway_name == 'Perforant' else 'Schaffer Collateral'
+    ax.set_title(f'WT vs I80T/+ – {path_label}', fontsize=9, fontweight='bold')
+    ax.legend(frameon=False, fontsize=5.5, loc='upper right')
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    if all_values:
+        y_min = min(all_values)
+        y_range = max(all_values) - y_min
+        sb_x = 250
+        sb_y = y_min - y_range * 0.05
+        ax.plot([sb_x, sb_x + 50], [sb_y, sb_y], 'k-', lw=1.5, clip_on=False)
+        ax.plot([sb_x + 50, sb_x + 50], [sb_y, sb_y + 2], 'k-', lw=1.5, clip_on=False)
+        ax.text(sb_x + 25, sb_y - y_range * 0.08, '50 ms', ha='center', va='top', fontsize=5.5)
+        ax.text(sb_x + 55, sb_y + 1, '2 mV', ha='left', va='center', fontsize=5.5)
+
+
+
+def plot_unitary_gabab_area_paired_combined(ax, delta_csv_path, drug_name, pathway_name, label, df_stats=None):
+    """
+    Plot paired Pre and Post GABAB Area for both WT and I80T/+ on the same plot.
+    """
+    import scipy.stats as sci_stats
+    add_subplot_label(ax, label)
+    if not os.path.exists(delta_csv_path):
+        ax.text(0.5, 0.5, 'No Delta Data', ha='center', va='center', transform=ax.transAxes)
+        return
+
+    df = pd.read_csv(delta_csv_path)
+    sub = df[(df['Drug'] == drug_name) & (df['Pathway'] == pathway_name)].copy()
+
+    if sub.empty:
+        ax.text(0.5, 0.5, f'No data', ha='center', va='center', transform=ax.transAxes, fontsize=7)
+        return
+
+    sub_wt = sub[sub['Genotype'] == 'WT']
+    sub_gnb1 = sub[sub['Genotype'].isin(['GNB1', 'I80T/+'])]
+
+    cat1, cat2 = 'Pre_GABAB_Area', 'Post_GABAB_Area'
+    
+    def plot_paired(data, color, base_x):
+        x1, x2 = base_x, base_x + 1
+        for _, row in data.iterrows():
+            if pd.notna(row[cat1]) and pd.notna(row[cat2]):
+                # The areas are negative, plot them as positive (multiply by -1)
+                y1 = -row[cat1]
+                y2 = -row[cat2]
+                ax.plot([x1, x2], [y1, y2], color=color, alpha=0.3, linewidth=0.8)
+
+        if len(data) > 0:
+            m1, m2 = -data[cat1].mean(), -data[cat2].mean()
+            s1, s2 = data[cat1].sem(), data[cat2].sem()
+            ax.plot([x1, x2], [m1, m2], color=color, linewidth=2, alpha=1.0)
+            ax.errorbar(x1, m1, yerr=s1, fmt='o', color=color, capsize=2, markersize=4)
+            ax.errorbar(x2, m2, yerr=s2, fmt='o', color=color, capsize=2, markersize=4)
+
+    plot_paired(sub_wt, 'black', 0)
+    plot_paired(sub_gnb1, 'red', 2.5)
+
+    ax.set_xticks([0, 1, 2.5, 3.5])
+    ax.set_xticklabels(['Gabazine', f'{drug_name}', 'Gabazine', f'{drug_name}'], fontsize=7, rotation=0)
+
+    # Add WT and I80T/+ labels under the groups
+    ax.text(0.5, -0.15, 'WT (Black)', ha='center', va='top', transform=ax.get_xaxis_transform(), fontweight='bold', fontsize=8)
+    ax.text(3.0, -0.15, 'I80T/+ (Red)', ha='center', va='top', transform=ax.get_xaxis_transform(), fontweight='bold', fontsize=8)
+
+    ax.set_xlim(-0.5, 4.0)
+    ax.set_ylabel('Slow IPSP Area (mV·s)', fontsize=8)
+    ax.set_title(f'WT vs I80T/+ {pathway_name}', fontsize=9, fontweight='bold')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # Statistical annotation (across genotype)
+    if df_stats is not None:
+        comparison = f"WT vs GNB1 ({pathway_name} Unitary Delta)"
+        row = df_stats[(df_stats['Drug'] == drug_name) & (df_stats['Comparison'] == comparison)]
+        if not row.empty:
+            sig = row.iloc[0].get('Significance', 'ns')
+            
+            y_max = 0
+            if len(sub_wt) > 0:
+                y_max = max(y_max, max((-sub_wt[cat1]).max(), (-sub_wt[cat2]).max()))
+            if len(sub_gnb1) > 0:
+                y_max = max(y_max, max((-sub_gnb1[cat1]).max(), (-sub_gnb1[cat2]).max()))
+                
+            y_pos = y_max * 1.05 + 0.05
+            ax.plot([0.5, 3.0], [y_pos, y_pos], 'k-', lw=0.8)
+            ax.text(1.75, y_pos*1.02, sig, ha='center', va='bottom', fontsize=9, fontweight='bold')
+            ax.set_ylim(bottom=0, top=y_pos*1.2)
+
+
+def plot_unitary_gabab_area_delta_single(ax, delta_csv_path, drug_name, pathway_name, label, df_stats=None):
+    """
+    Plot Delta GABAB Area for a single drug + pathway combination.
+    Used to create 4 separate subplots in Panel C.
+    """
+    add_subplot_label(ax, label)
+    if not os.path.exists(delta_csv_path):
+        ax.text(0.5, 0.5, 'No Delta Data', ha='center', va='center', transform=ax.transAxes)
+        return
+
+    df = pd.read_csv(delta_csv_path)
+    df = rename_genotype(df)
+    sub = df[(df['Drug'] == drug_name) & (df['Pathway'] == pathway_name)].copy()
+
+    if sub.empty:
+        ax.text(0.5, 0.5, f'No {drug_name}\n{pathway_name} data', ha='center', va='center', transform=ax.transAxes, fontsize=7)
+        return
+
+    # User says Post - Pre is correct for data, but magnitude decrease should "go down"
+    # Magnitude = -Area (since GABAB areas are negative)
+    # Mag_Delta = Mag_Post - Mag_Pre = (-sub['Post_GABAB_Area']) - (-sub['Pre_GABAB_Area'])
+    # This equals Pre_Area - Post_Area.
+    sub['Inhibition_Delta'] = sub['Pre_GABAB_Area'] - sub['Post_GABAB_Area']
+
+    plot_bar_scatter(ax, sub, 'Genotype', 'Inhibition_Delta', 'Genotype',
+                     order=['WT', 'I80T/+'], unique_col='Cell_ID')
+    ax.set_ylabel('Δ GABAB Area (mV·s)', fontsize=7)
+    pathway_label = 'ECIII' if pathway_name == 'Perforant' else 'CA3 Apical'
+    ax.set_title(f'{drug_name} Δ {pathway_label}', fontsize=8, fontweight='bold')
+    ax.set_box_aspect(1)
+
+    # Statistical annotation
+    if df_stats is not None:
+        comparison = f"WT vs GNB1 ({pathway_name} Unitary Delta)"
+        row = df_stats[(df_stats['Drug'] == drug_name) & (df_stats['Comparison'] == comparison)]
+        if not row.empty:
+            sig = row.iloc[0].get('Significance', 'ns')
+            wt_vals = sub[sub['Genotype'] == 'WT']['Inhibition_Delta'].dropna()
+            gnb1_vals = sub[sub['Genotype'] == 'I80T/+']['Inhibition_Delta'].dropna()
+            if len(wt_vals) > 0 and len(gnb1_vals) > 0:
+                m_wt, m_gnb = wt_vals.mean(), gnb1_vals.mean()
+                s_wt, s_gnb = wt_vals.sem(), gnb1_vals.sem()
+                
+                # Position stars above or below depending on sign
+                if m_wt >= 0 and m_gnb >= 0:
+                    y_pos = max(m_wt + s_wt, m_gnb + s_gnb) * 1.15 + 0.05
+                elif m_wt <= 0 and m_gnb <= 0:
+                    y_pos = min(m_wt - s_wt, m_gnb - s_gnb) * 1.15 - 0.05
+                else:
+                    y_pos = max(abs(m_wt)+s_wt, abs(m_gnb)+s_gnb) * 1.15 + 0.05
+                
+                ax.text(0.5, y_pos, sig, ha='center', va='bottom' if y_pos > 0 else 'top', 
+                        fontsize=9, fontweight='bold', transform=ax.get_xaxis_transform())
+
+
+
+def plot_plateau_girk_delta(ax, plateau_csv_path, drug_name, label, df_stats=None):
+    """
+    Plot Delta Plateau Area for GIRK pharmacology (ML297 or ETX).
+    """
+    add_subplot_label(ax, label)
+    if os.path.exists(plateau_csv_path):
+        df = pd.read_csv(plateau_csv_path)
+        df_sub = df[df['Drug'] == drug_name].copy()
+        df_sub = rename_genotype(df_sub)
+        
+        # IMPORTANT: Filter for 'Both' pathway to avoid multiplying N counts
+        df_sub = df_sub[df_sub['Pathway'] == 'Both'].copy()
+        
+        plot_bar_scatter(ax, df_sub, 'Genotype', 'Delta_Area', 'Genotype', order=['WT', 'I80T/+'], unique_col='Cell_ID')
+        ax.set_ylabel('Δ Plateau Area (mV-s)')
+        ax.set_title(f'GIRK Effect: {drug_name}', fontsize=8, fontweight='bold')
+        ax.set_box_aspect(1)
+
+        if df_stats is not None:
+             comparison = "WT vs GNB1 (Plateau Delta)"
+             # For Plateau Delta, we use 'Both' pathway for the main summary bar
+             row = df_stats[(df_stats['Drug'] == drug_name) & 
+                            (df_stats['Comparison'] == comparison) &
+                            (df_stats['Pathway'] == 'Both')]
+             if not row.empty:
+                 sig = row.iloc[0].get('Significance', 'ns')
+                 y_max = max(df_sub.groupby('Genotype')['Delta_Area'].mean())
+                 y_pos = y_max + (abs(y_max) * 0.1)
+                 ax.text(0.5, y_pos, sig, ha='center', va='bottom', fontsize=9, fontweight='bold')
+                 if sig != 'ns':
+                     ax.plot([0, 1], [y_pos, y_pos], 'k-', lw=0.8)
+    else:
+        ax.text(0.5, 0.5, 'No Plateau Data', ha='center', va='center')
     
