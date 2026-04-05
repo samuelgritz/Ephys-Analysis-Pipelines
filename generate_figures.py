@@ -378,7 +378,7 @@ def plot_figure_2_physiology():
     ax_a = fig.add_subplot(gs_A[1, :])
     if df_intrinsic is not None and 'Input_Resistance_MOhm' in df_intrinsic.columns:
         plot_bar_scatter(ax_a, df_intrinsic, 'Genotype', 'Input_Resistance_MOhm',
-                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=300)
+                         'Genotype', order=['WT', 'I80T/+'], ymin=0, ymax=300)
         ax_a.set_ylabel('Input Resistance (MΩ)', fontsize=7)
         ax_a.set_title('Input Resistance', fontsize=8)
         ax_a.set_box_aspect(1)
@@ -413,7 +413,7 @@ def plot_figure_2_physiology():
     ax_b_bar = fig.add_subplot(gs_B[1, :])
     if df_intrinsic is not None and 'Voltage_sag' in df_intrinsic.columns:
         plot_bar_scatter(ax_b_bar, df_intrinsic, 'Genotype', 'Voltage_sag',
-                         'Genotype', order=['WT', 'I80T/+'], ymin=-2, ymax=30)
+                         'Genotype', order=['WT', 'I80T/+'], ymin=0, ymax=30)
         ax_b_bar.set_ylabel('Voltage Sag (%)', fontsize=7)
         ax_b_bar.set_title('Voltage Sag', fontsize=8)
         ax_b_bar.set_box_aspect(1)
@@ -651,7 +651,8 @@ def plot_figure_2_physiology():
         ax_i.spines['top'].set_visible(False)
         ax_i.spines['right'].set_visible(False)
         ax_i.set_box_aspect(1)
-        apply_clean_yticks(ax_i)
+        ax_i.set_ylim(40, 65)
+        ax_i.set_yticks([40, 45, 50, 55, 60, 65])
         ax_i.legend(loc='upper left', frameon=False, fontsize=8)
     else:
         ax_i.text(0.5, 0.5, 'ISI Data Missing', ha='center', color='red')
@@ -1300,12 +1301,10 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
         ylims_inh_b.append(ylim)
         if col > 0: ax.set_ylabel('')
         
-    # Sync Y-axis for ALL pathways in Row 4 (Panel D) — cap top at 0
-    max_y = 0  # GABAB area is always negative; force top tick at 0
-    min_y = min([yl[0] for yl in ylims_inh_b if yl is not None])
+    # Sync Y-axis for ALL pathways in Row 4 (Panel D) — fix between -1 and 0
     for ax in axs_inh_b:
-        ax.set_ylim(min_y, max_y)
-        apply_clean_yticks(ax)
+        ax.set_ylim(-1, 0)
+        ax.set_yticks([-1.0, -0.8, -0.6, -0.4, -0.2, 0.0])
 
     # Save multiple formats
     for ext in ['.png', '.pdf', '.svg']:
