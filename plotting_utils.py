@@ -1452,9 +1452,30 @@ def plot_bar_comparison_df(ax, df_metrics, pathway_name, metric_col, ylabel, lab
     ax.set_ylabel(ylabel, fontsize=7)
 
 def annotate_from_stats(ax, stats_df, panel_id, comparison_substring, x1, x2, y_pos, bracket=True):
-    """Old annotation helper - now redirects to star-only logic for Fig 4."""
-    if stats_df is None: return
-    pass
+    """
+    Finds significance marker in stats_df and draws it on ax from x1 to x2 at y_pos.
+    Filters by Figure_Panel == panel_id AND Comparison containing comparison_substring.
+    """
+    if stats_df is None or stats_df.empty: return
+    
+    # 1. Filter by Panel ID (e.g. 'Fig 1B', 'Fig 2A')
+    subset = stats_df[stats_df['Figure_Panel'] == panel_id]
+    if subset.empty: return
+    
+    # 2. Filter by Comparison string (e.g. 'Weight', 'Input Resistance')
+    row = subset[subset['Comparison'].str.contains(comparison_substring, case=False, na=False)]
+    if row.empty: return
+    
+    sig = str(row.iloc[0]['Significance'])
+    if sig == 'ns' or not sig: return
+    
+    # 3. Draw
+    if bracket:
+        h = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.02
+        ax.plot([x1, x1, x2, x2], [y_pos-h, y_pos, y_pos, y_pos-h], lw=1, color='black')
+        ax.text((x1+x2)*0.5, y_pos, sig, ha='center', va='bottom', fontsize=8)
+    else:
+        ax.text((x1+x2)*0.5, y_pos, sig, ha='center', va='bottom', fontsize=8)
 
 def get_safe_y(data_series, buffer_percent=0.15):
     """Calculates a safe Y position above the max data point."""

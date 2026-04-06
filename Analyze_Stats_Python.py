@@ -49,8 +49,7 @@ def run_stats_figure_1():
             'Test_Used': res['Test'],
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
-            'Significance': res['Significance'],
-            'Normality_Check': res['Normality']
+            'Significance': res['Significance']
         })
 
     # --- Load Data ---
@@ -169,8 +168,7 @@ def run_stats_figure_2():
             'Test_Used': res['Test'],
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
-            'Significance': res['Significance'],
-            'Normality_Check': res['Normality']
+            'Significance': res['Significance']
         })
 
     # --- Load Data ---
@@ -281,8 +279,7 @@ def run_stats_figure_3():
             'Test_Used': res['Test'],
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
-            'Significance': res['Significance'],
-            'Normality_Check': res['Normality']
+            'Significance': res['Significance']
         })
 
     # --- Load Data ---
@@ -405,12 +402,6 @@ def run_stats_figure_4():
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
             'Significance': sig,
-            'Normality_Check': res['Normality'],
-            'Mean_WT': res.get('Mean_WT', np.nan),
-            'Mean_GNB1': res.get('Mean_GNB1', np.nan),
-            'SEM_WT': res.get('SEM_WT', np.nan),
-            'SEM_GNB1': res.get('SEM_GNB1', np.nan),
-            'N_WT': n_wt,
             'N_GNB1': n_gnb1,
         })
 
@@ -482,7 +473,7 @@ def run_stats_figure_7():
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
             'Significance': res['Significance'],
-            'Normality_Check': res['Normality']
+            'N_GNB1': n_gnb1
         }
         if n_wt is not None:
             row['N_WT'] = n_wt
@@ -712,20 +703,23 @@ def run_stats_figure_8():
     
     all_stats_export = []
 
-    def record_stat(drug, pathway, comparison, res):
-        print(f"  {drug} | {pathway} | {comparison}: p={res['p']:.4f} ({res['Significance']})")
+    def record_stat(drug, pathway, comparison, res, n_wt, n_gnb1):
+        sig = res['Significance']
+        print(f"  {drug} | {pathway} | {comparison}: p={res['p']:.4f} ({sig})")
         all_stats_export.append({
             'Drug': drug,
             'Pathway': pathway,
             'Comparison': comparison,
-            'p_value': res['p'],
-            'test_stat': res['Statistic'],
-            'test_type': res['Test'],
-            'WT_mean': res.get('Mean_WT', np.nan),
-            'GNB1_mean': res.get('Mean_GNB1', np.nan),
-            'WT_n': res.get('N_WT', 0),
-            'GNB1_n': res.get('N_GNB1', 0),
-            'Significance': res['Significance']
+            'P_Value': res['p'],
+            'Statistic': res['Statistic'],
+            'Test_Used': res['Test'],
+            'Significance': sig,
+            'Mean_WT': res.get('Mean_WT', np.nan),
+            'Mean_GNB1': res.get('Mean_GNB1', np.nan),
+            'SEM_WT': res.get('SEM_WT', np.nan),
+            'SEM_GNB1': res.get('SEM_GNB1', np.nan),
+            'N_WT': n_wt,
+            'N_GNB1': n_gnb1,
         })
 
     # 1. GIRK Plateau Deltas
@@ -738,8 +732,8 @@ def run_stats_figure_8():
                 gnb1 = sub[sub['Genotype'] == 'GNB1']['Delta_Area']
                 if len(wt) > 2 and len(gnb1) > 2:
                     res = compare_two_groups(wt, gnb1)
-                    res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'N_WT': len(wt), 'N_GNB1': len(gnb1)})
-                    record_stat(drug, pathway, "WT vs GNB1 (Plateau Delta)", res)
+                    res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean()})
+                    record_stat(drug, pathway, "WT vs GNB1 (Plateau Delta)", res, len(wt), len(gnb1))
 
     # 2. Unitary GABAB Area Deltas (Pathway Specific)
     df_unitary = load_data('Plateau_data', 'GIRK_Unitary_GABAB_Deltas.csv')
@@ -751,8 +745,8 @@ def run_stats_figure_8():
                 gnb1 = sub[sub['Genotype'] == 'GNB1']['Delta_GABAB_Area']
                 if len(wt) >= 2 and len(gnb1) >= 2:
                     res = compare_two_groups(wt, gnb1)
-                    res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean(), 'N_WT': len(wt), 'N_GNB1': len(gnb1)})
-                    record_stat(drug, pathway, f"WT vs GNB1 ({pathway} Unitary Delta)", res)
+                    res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean()})
+                    record_stat(drug, pathway, f"WT vs GNB1 ({pathway} Unitary Delta)", res, len(wt), len(gnb1))
 
 
     # 3. Baclofen Vm Changes — computed fresh from source data
@@ -762,11 +756,8 @@ def run_stats_figure_8():
         gnb1_bac = df_bac_vm[df_bac_vm['Genotype'] == 'GNB1']['Voltage Change'].dropna()
         if len(wt_bac) >= 2 and len(gnb1_bac) >= 2:
             res = compare_two_groups(wt_bac, gnb1_bac)
-            res.update({
-                'Mean_WT':  wt_bac.mean(),  'Mean_GNB1': gnb1_bac.mean(),
-                'N_WT':     len(wt_bac),    'N_GNB1':    len(gnb1_bac)
-            })
-            record_stat('Baclofen', 'Both', "WT vs GNB1 (ΔVm)", res)
+            res.update({'Mean_WT': wt_bac.mean(), 'Mean_GNB1': gnb1_bac.mean()})
+            record_stat('Baclofen', 'Both', "WT vs GNB1 (ΔVm)", res, len(wt_bac), len(gnb1_bac))
         else:
             print("  ⚠ Baclofen Vm Change: insufficient data for comparison")
     else:
@@ -798,8 +789,7 @@ def run_stats_supplemental_figure_3():
             'Test_Used': res['Test'],
             'Statistic': res['Statistic'],
             'P_Value': res['p'],
-            'Significance': res['Significance'],
-            'Normality_Check': res['Normality']
+            'Significance': res['Significance']
         })
 
     # Load Data

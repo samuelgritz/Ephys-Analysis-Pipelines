@@ -185,7 +185,6 @@ def plot_figure_1_behavior():
               ha='center', va='center', fontsize=7, color='gray', style='italic')
     ax_d_trace.set_facecolor('#f8f8f8')
     ax_d_trace.set_xticks([])
-    ax_d_trace.set_yticks([])
     for spine in ax_d_trace.spines.values():
         spine.set_visible(False)
     # D-right: bar plot
@@ -195,6 +194,8 @@ def plot_figure_1_behavior():
         ax_d.set_title('Anxiety Ratio', fontsize=8)
         ax_d.set_ylabel('Center Outer Time Ratio')
         apply_clean_yticks(ax_d)
+        ax_d.set_ylim([-.02, 0.4])
+        ax_d.set_yticks([0, 0.2, 0.4])
         annotate_from_stats(ax_d, df_stats, "Fig 1D", "Anxiety", x1=0, x2=1, y_pos=get_safe_y(df_of_anx['Center_Outer_Time_Ratio']))
 
     # ===== ROW 3: E (Circadian Activity) | F (Total Dark Phase) =====
@@ -266,7 +267,7 @@ def plot_figure_1_behavior():
         ax_j.set_title('Spontaneous Alternation', fontsize=8)
         ax_j.set_ylabel('Percent Alternations')
         # Percent alternation is bounded 0-100%; use fixed scale
-        ax_j.set_ylim(0, 100)
+        ax_j.set_ylim(-1, 100)
         ax_j.set_yticks([0, 25, 50, 75, 100])
         annotate_from_stats(ax_j, df_stats, "Fig 1K", "Alternation", x1=0, x2=1, y_pos=90)
 
@@ -1643,14 +1644,15 @@ def plot_supplemental_figure_1():
     fig.subplots_adjust(wspace=0.35, left=0.08, right=0.98, top=0.8, bottom=0.2)
     
     pathways = [
-        ('Perforant', 'Perforant'),
-        ('Schaffer', 'Schaffer'),
-        ('Basal SO', 'Basal_Stratum_Oriens')
+        ('ECIII Input (Perforant)', 'Perforant', 'A'),
+        ('CA3 Apical Input (Schaffer)', 'Schaffer', 'B'),
+        ('CA3 Basal Input', 'Basal_Stratum_Oriens', 'C')
     ]
     
     ylims = []
-    for col_idx, (path_label, path_code) in enumerate(pathways):
+    for col_idx, (path_label, path_code, label) in enumerate(pathways):
         ax = axes[col_idx]
+        add_subplot_label(ax, label, x=-0.1) # Standard label from plotting_utils
         ylim = plot_metric_comparison(ax, df, path_code, 'E_I_Imbalance', 
                                      'E/I Imbalance Index' if col_idx==0 else '', 
                                      add_legend=(col_idx==2))
@@ -1663,12 +1665,10 @@ def plot_supplemental_figure_1():
         
         ylims.append(ylim)
         
-    # Sync Y axes
-    ymin = min(y[0] for y in ylims if y is not None)
-    ymax = max(y[1] for y in ylims if y is not None)
+    # Sync Y axes - use even 0.1 or 0.2 spacing for E/I index (0.4 to 1.0 range)
     for ax in axes:
-        ax.set_ylim(ymin, ymax)
-        apply_clean_yticks(ax)
+        ax.set_ylim(0.4, 1.0)
+        ax.set_yticks([0.4, 0.6, 0.8, 1.0])
 
     save_current_fig('Supplemental_Figure_1_EI_Imbalance')
 

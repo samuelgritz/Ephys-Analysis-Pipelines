@@ -5692,8 +5692,8 @@ def generate_EI_summary_files(amplitudes_csv_path, output_dir):
                 'E/I_Imbalance_N': str(n_est_inh)
             })
             
-    supp_df = pd.DataFrame(supp_rows)
-    supp_df.to_csv(os.path.join(output_dir, 'Supplemental_Figure_1_EI_Summary.csv'), index=False)
-    print(f"✓ Generated Supplemental Figure 1 EI Summary")
+    # supp_df = pd.DataFrame(supp_rows)
+    # supp_df.to_csv(os.path.join(output_dir, 'Supplemental_Figure_1_EI_Summary.csv'), index=False)
+    # print(f"✓ Generated Supplemental Figure 1 EI Summary")
     
-    return fig56_df, fig4_df, supp_df
+    return fig56_df, fig4_df

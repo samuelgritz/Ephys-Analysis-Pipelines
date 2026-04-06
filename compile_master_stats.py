@@ -20,7 +20,6 @@ Output columns (per row):
     Statistic       – test statistic value
     P_Value         – raw p-value (or FDR-corrected for post-hocs)
     Significance    – symbol (ns / * / ** / ***)
-    Normality_Check – shapiro / not tested / etc.
     Notes           – extra context (effect term, ISI, interaction p, etc.)
 
 Run:
@@ -53,7 +52,7 @@ def p_to_sig(p):
 def row(figure, subpanel, metric, pathway, condition,
         wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n,
         test_used, statistic, p_value, significance,
-        normality="Not tested", notes=""):
+        notes=""):
     def _f(x): return round(float(x), 4) if pd.notna(x) else np.nan
     def _i(x): return int(x) if pd.notna(x) else np.nan
     return dict(
@@ -67,7 +66,6 @@ def row(figure, subpanel, metric, pathway, condition,
         Statistic=statistic,
         P_Value=float(p_value) if pd.notna(p_value) else np.nan,
         Significance=str(significance),
-        Normality_Check=str(normality),
         Notes=str(notes),
     )
 
@@ -100,7 +98,7 @@ for tp in ["P8-P10", "P28", "Adult"]:
         "Figure 1", f"B – {tp}", f"Body Weight ({tp})", "N/A", "N/A",
         wt.mean(), wt.sem(), len(wt), gnb.mean(), gnb.sem(), len(gnb),
         st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st["Normality_Check"], notes="Weight in grams"
+        notes="Weight in grams"
     ))
 
 # Fig 1C – locomotion
@@ -111,8 +109,7 @@ rows.append(row(
     "Figure 1", "C", "Open Field Total Distance (m)", "N/A", "N/A",
     wt_loc.mean(), wt_loc.sem(), len(wt_loc),
     gnb_loc.mean(), gnb_loc.sem(), len(gnb_loc),
-    st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-    normality=st["Normality_Check"]
+    st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
 ))
 
 # Fig 1D – anxiety ratio
@@ -123,8 +120,7 @@ rows.append(row(
     "Figure 1", "D", "Open Field Center:Outer Time Ratio", "N/A", "N/A",
     wt_anx.mean(), wt_anx.sem(), len(wt_anx),
     gnb_anx.mean(), gnb_anx.sem(), len(gnb_anx),
-    st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-    normality=st["Normality_Check"]
+    st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
 ))
 
 # Fig 1G – DVC dark phase
@@ -138,7 +134,7 @@ rows.append(row(
     wt_dvc.mean(), wt_dvc.sem(), len(wt_dvc),
     gnb_dvc.mean(), gnb_dvc.sem(), len(gnb_dvc),
     st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-    normality=st["Normality_Check"], notes="Mean activity per cage across dark-phase hours"
+    notes="Mean activity per cage across dark-phase hours"
 ))
 
 # Fig 1I, 1J, 1K – load zone-entries file for distance & arm counts
@@ -171,8 +167,7 @@ for panel_key, metric_label, src_df, col in [
         gnb_v.mean() if len(gnb_v) else np.nan,
         gnb_v.sem()  if len(gnb_v) > 1 else np.nan,
         len(gnb_v)   if len(gnb_v) else np.nan,
-        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st["Normality_Check"]
+        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
     ))
 
 # Supplemental OLM
@@ -180,8 +175,7 @@ for _, st in df_s1[df_s1["Figure_Panel"] == "Supplemental Fig"].iterrows():
     rows.append(row(
         "Supplemental Figure (OLM)", "OLM", st["Comparison"],
         "N/A", "N/A", np.nan,np.nan,np.nan, np.nan,np.nan,np.nan,
-        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st["Normality_Check"]
+        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
     ))
 
 
@@ -207,6 +201,7 @@ phys_map = {
     "AP Halfwidth":     ("AP_halfwidth",           df_ap,   "C", "AP Halfwidth (ms)"),
     "AHP Amplitude":    ("AHP_size",               df_ap,   "E", "AHP Amplitude (mV)"),
     "AHP Decay":        ("decay_area",             df_ap,   "E", "AHP Decay Area (mV·ms)"),
+    "Access Resistance": ("Access Resistance (From Whole Cell V-Clamp)", df_phys, "QC", "Access Resistance (MΩ)"),
 }
 for comp_key, (col, df_src, subp, mlabel) in phys_map.items():
     st_rows = df_s2[df_s2["Comparison"] == comp_key]
@@ -217,8 +212,7 @@ for comp_key, (col, df_src, subp, mlabel) in phys_map.items():
     rows.append(row(
         "Figure 2", subp, mlabel, "N/A", "N/A",
         wt.mean(), wt.sem(), len(wt), gnb.mean(), gnb.sem(), len(gnb),
-        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st.get("Normality_Check","Not tested")
+        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
     ))
 
 # F-I midpoint
@@ -228,8 +222,7 @@ gnb_fi = df_fi[df_fi["Genotype"] == "GNB1"]["FI_Midpoint"].dropna()
 rows.append(row(
     "Figure 2", "F", "F-I Curve Midpoint (pA)", "N/A", "N/A",
     wt_fi.mean(), wt_fi.sem(), len(wt_fi), gnb_fi.mean(), gnb_fi.sem(), len(gnb_fi),
-    st_fi["Test_Used"], st_fi["Statistic"], st_fi["P_Value"], st_fi["Significance"],
-    normality=st_fi.get("Normality_Check","Not tested")
+    st_fi["Test_Used"], st_fi["Statistic"], st_fi["P_Value"], st_fi["Significance"]
 ))
 
 # F-I 2-way RM ANOVA model terms
@@ -278,8 +271,7 @@ for panel_key, comp, mlabel, dtype, col in morph_map:
         "Figure 3", panel_key.replace("Fig 3","").strip(),
         mlabel, dtype, "N/A",
         wt.mean(), wt.sem(), len(wt), gnb.mean(), gnb.sem(), len(gnb),
-        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st.get("Normality_Check","Not tested")
+        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
     ))
 
 
@@ -308,8 +300,7 @@ for _, st in df_s4.iterrows():
     rows.append(row(
         "Figure 4", f"{subp} – {pw}", mlabel, pw, "Unitary (ISI 300 ms)",
         wt.mean(), wt.sem(), len(wt), gnb.mean(), gnb.sem(), len(gnb),
-        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st.get("Normality_Check","Not tested")
+        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
     ))
 
 
@@ -487,8 +478,7 @@ for _, st in df_s7.iterrows():
         st["N_WT"] if pd.notna(st["N_WT"]) else np.nan,
         st["Mean_GNB1"], st["SEM_GNB1"],
         st["N_GNB1"] if pd.notna(st["N_GNB1"]) else np.nan,
-        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st.get("Normality_Check","Not tested")
+        st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
     ))
 
 
@@ -538,7 +528,7 @@ for _, st in df_s8.iterrows():
         mlabel, pw, cond,
         st["WT_mean"], wt_s, st["WT_n"],
         st["GNB1_mean"], gnb_s, st["GNB1_n"],
-        st["test_type"], st["test_stat"], st["p_value"], st["Significance"],
+        st["test_type"], st["test_stat"], st["p_value"], st["Significance"]
     ))
 
 
@@ -547,23 +537,42 @@ for _, st in df_s8.iterrows():
 # ══════════════════════════════════════════════════════════════════════════════
 print("Building Supplemental Figure 1 rows …")
 
-df_sig_markers = pd.read_csv("paper_data/E_I_data/Figure_5_6_Significance_Markers.csv")
-imb = df_sig_markers[df_sig_markers["Analysis"] == "E_I_Imbalance"]
+df_anova_ei = pd.read_csv("paper_data/E_I_data/Figure_5_6_All_Stats_ANOVA.csv")
+imb = df_anova_ei[df_anova_ei["Analysis"] == "E_I_Imbalance"]
+
 for _, st in imb.iterrows():
     pw  = st["Pathway"]
+    eff = st["Effect"]
+    
+    if eff not in EFFECT_LABEL56: continue
+    cond_label = f"All ISIs – {EFFECT_LABEL56[eff]}"
+    
     sub = df_ei[df_ei["Pathway"] == pw].dropna(
         subset=["Gabazine_Amplitude","Estimated_Inhibition_Amplitude"]).copy()
     sub["EI_ratio"] = (sub["Gabazine_Amplitude"] /
                        (sub["Gabazine_Amplitude"] + sub["Estimated_Inhibition_Amplitude"].abs()))
-    wt  = sub[sub["Genotype"]=="WT"]["EI_ratio"]
-    gnb = sub[sub["Genotype"]=="GNB1"]["EI_ratio"]
+    wt_cells  = sub[sub["Genotype"]=="WT"]["Cell_ID"].unique()
+    gnb_cells = sub[sub["Genotype"]=="GNB1"]["Cell_ID"].unique()
+    wt_data   = sub[sub["Genotype"]=="WT"]["EI_ratio"]
+    gnb_data  = sub[sub["Genotype"]=="GNB1"]["EI_ratio"]
+    
+    f_val  = st["F value"]
+    num_df = st["NumDF"]
+    den_df = st["DenDF"]
+    stat_str = f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={round(f_val,3) if pd.notna(f_val) else '?'}"
+    
     rows.append(row(
         "Supplemental Figure 1", f"E:I Imbalance – {pw}",
-        "E:I Imbalance Index (EPSP / (EPSP+|IPSP|))", pw, "All ISIs pooled",
-        wt.mean(), wt.sem(), len(wt), gnb.mean(), gnb.sem(), len(gnb),
-        "LME main effect", np.nan,
-        st["Main_Effect_p"], p_to_sig(st["Main_Effect_p"]),
-        notes="From Figure_5_6_Significance_Markers – E_I_Imbalance rows"
+        "E:I Imbalance Index (EPSP / (EPSP+|IPSP|))", pw, cond_label,
+        wt_data.mean() if eff=="Genotype" else np.nan, 
+        wt_data.sem() if eff=="Genotype" else np.nan, 
+        len(wt_cells),
+        gnb_data.mean() if eff=="Genotype" else np.nan, 
+        gnb_data.sem() if eff=="Genotype" else np.nan, 
+        len(gnb_cells),
+        "LME Type III ANOVA (lmerTest)", stat_str,
+        st["P_Value"], st["Significant"],
+        notes=f"ANOVA term: {eff}"
     ))
 
 
@@ -579,7 +588,6 @@ for _, st in df_supp3.iterrows():
         st["Comparison"], "Hippocampus", "N/A",
         np.nan,np.nan,np.nan, np.nan,np.nan,np.nan,
         st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-        normality=st.get("Normality_Check","Not tested"),
         notes="GNB1 protein levels (Western blot)"
     ))
 
@@ -594,7 +602,7 @@ COLUMNS = [
     "WT_Mean","WT_SEM","WT_N",
     "I80T_Mean","I80T_SEM","I80T_N",
     "Test_Used","Statistic","P_Value","Significance",
-    "Normality_Check","Notes",
+    "Notes",
 ]
 
 df_master = pd.DataFrame(rows, columns=COLUMNS)
