@@ -710,16 +710,36 @@ def run_stats_figure_8():
             'Drug': drug,
             'Pathway': pathway,
             'Comparison': comparison,
-            'P_Value': res['p'],
-            'Statistic': res['Statistic'],
-            'Test_Used': res['Test'],
+            'p_value': res['p'],
+            'test_stat': res['Statistic'],
+            'test_type': res['Test'],
             'Significance': sig,
-            'Mean_WT': res.get('Mean_WT', np.nan),
-            'Mean_GNB1': res.get('Mean_GNB1', np.nan),
+            'WT_mean': res.get('Mean_WT', np.nan),
+            'GNB1_mean': res.get('Mean_GNB1', np.nan),
             'SEM_WT': res.get('SEM_WT', np.nan),
             'SEM_GNB1': res.get('SEM_GNB1', np.nan),
-            'N_WT': n_wt,
-            'N_GNB1': n_gnb1,
+            'WT_n': n_wt,
+            'GNB1_n': n_gnb1,
+        })
+
+    def record_paired_stat(drug, pathway, comparison, res, genotype, n):
+        """Record a paired (within-genotype) before→after drug test."""
+        sig = res['Significance']
+        print(f"  {drug} | {pathway} | {comparison}: p={res['p']:.4f} ({sig})")
+        all_stats_export.append({
+            'Drug': drug,
+            'Pathway': pathway,
+            'Comparison': comparison,
+            'p_value': res['p'],
+            'test_stat': res['Statistic'],
+            'test_type': res['Test'],
+            'Significance': sig,
+            'WT_mean': res.get('Mean_WT', np.nan) if genotype == 'WT' else np.nan,
+            'GNB1_mean': res.get('Mean_GNB1', np.nan) if genotype == 'GNB1' else np.nan,
+            'SEM_WT': np.nan,
+            'SEM_GNB1': np.nan,
+            'WT_n': n if genotype == 'WT' else np.nan,
+            'GNB1_n': n if genotype == 'GNB1' else np.nan,
         })
 
     # 1. GIRK Plateau Deltas
@@ -728,6 +748,8 @@ def run_stats_figure_8():
         for drug in ['ML297', 'ETX']:
             for pathway in ['Both', 'Perforant', 'Schaffer']:
                 sub = df_girk[(df_girk['Drug'] == drug) & (df_girk['Pathway'] == pathway)]
+
+                # --- Unpaired: WT vs GNB1 delta comparison ---
                 wt = sub[sub['Genotype'] == 'WT']['Delta_Area']
                 gnb1 = sub[sub['Genotype'] == 'GNB1']['Delta_Area']
                 if len(wt) > 2 and len(gnb1) > 2:
@@ -735,18 +757,51 @@ def run_stats_figure_8():
                     res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean()})
                     record_stat(drug, pathway, "WT vs GNB1 (Plateau Delta)", res, len(wt), len(gnb1))
 
+                # --- Paired: Pre vs Post drug within each genotype (Wilcoxon) ---
+                for geno in ['WT', 'GNB1']:
+                    sub_g = sub[sub['Genotype'] == geno].dropna(subset=['Pre_Area', 'Post_Area'])
+                    if len(sub_g) >= 3:
+                        pre = sub_g['Pre_Area'].reset_index(drop=True)
+                        post = sub_g['Post_Area'].reset_index(drop=True)
+                        res = compare_two_groups(pre, post, paired=True)
+                        res.update({'Mean_WT': pre.mean() if geno == 'WT' else np.nan,
+                                    'Mean_GNB1': pre.mean() if geno == 'GNB1' else np.nan})
+                        record_paired_stat(drug, pathway,
+                                           f"{geno} Pre vs Post {drug} (Plateau, Paired)",
+                                           res, geno, len(sub_g))
+
     # 2. Unitary GABAB Area Deltas (Pathway Specific)
     df_unitary = load_data('Plateau_data', 'GIRK_Unitary_GABAB_Deltas.csv')
     if df_unitary is not None:
+        # Check what columns are available for paired comparison
+        has_pre_post = ('Pre_GABAB_Area' in df_unitary.columns and
+                        'Post_GABAB_Area' in df_unitary.columns)
         for drug in ['ML297', 'ETX']:
             for pathway in ['Perforant', 'Schaffer']:
                 sub = df_unitary[(df_unitary['Drug'] == drug) & (df_unitary['Pathway'] == pathway)]
+
+                # --- Unpaired: WT vs GNB1 delta comparison ---
                 wt = sub[sub['Genotype'] == 'WT']['Delta_GABAB_Area']
                 gnb1 = sub[sub['Genotype'] == 'GNB1']['Delta_GABAB_Area']
                 if len(wt) >= 2 and len(gnb1) >= 2:
                     res = compare_two_groups(wt, gnb1)
                     res.update({'Mean_WT': wt.mean(), 'Mean_GNB1': gnb1.mean()})
                     record_stat(drug, pathway, f"WT vs GNB1 ({pathway} Unitary Delta)", res, len(wt), len(gnb1))
+
+                # --- Paired: Pre vs Post drug within each genotype (Wilcoxon) ---
+                if has_pre_post:
+                    for geno in ['WT', 'GNB1']:
+                        sub_g = sub[sub['Genotype'] == geno].dropna(
+                            subset=['Pre_GABAB_Area', 'Post_GABAB_Area'])
+                        if len(sub_g) >= 3:
+                            pre = sub_g['Pre_GABAB_Area'].reset_index(drop=True)
+                            post = sub_g['Post_GABAB_Area'].reset_index(drop=True)
+                            res = compare_two_groups(pre, post, paired=True)
+                            res.update({'Mean_WT': pre.mean() if geno == 'WT' else np.nan,
+                                        'Mean_GNB1': pre.mean() if geno == 'GNB1' else np.nan})
+                            record_paired_stat(drug, pathway,
+                                               f"{geno} Pre vs Post {drug} ({pathway} Unitary, Paired)",
+                                               res, geno, len(sub_g))
 
 
     # 3. Baclofen Vm Changes — computed fresh from source data
@@ -768,7 +823,7 @@ def run_stats_figure_8():
         stats_df = pd.DataFrame(all_stats_export)
         save_path = os.path.join(DATA_ROOT, 'Plateau_data', 'Stats_Results_Figure_8.csv')
         stats_df.to_csv(save_path, index=False)
-        print(f"\n✓ Saved Figure 7 stats to: {save_path}")
+        print(f"\n✓ Saved Figure 8 stats to: {save_path}")
 
 # ==================================================================================================
 # SUPPLEMENTAL FIGURE 3: PROTEIN LEVELS

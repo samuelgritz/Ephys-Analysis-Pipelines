@@ -519,6 +519,19 @@ for _, st in df_s8.iterrows():
         subp = "F"
         mlabel = f"Δ Unitary GABAB Area – {drug}"
         cond   = f"{drug} – Unitary"
+    elif "Pre vs Post" in comp and "Plateau" in comp:
+        # Paired Wilcoxon: Pre vs Post drug within genotype — Plateau Area
+        sub_p = df_plat_d[(df_plat_d["Drug"]==drug)&(df_plat_d["Pathway"]==pw)]
+        wt_s = gnb_s = np.nan
+        subp  = "I" if drug=="ML297" else "L"
+        mlabel = f"Pre vs Post {drug} – Plateau Area (mV·s) [Paired]"
+        cond   = f"{drug} – TBS (Paired)"
+    elif "Pre vs Post" in comp and "Unitary" in comp:
+        # Paired Wilcoxon: Pre vs Post drug within genotype — Unitary GABAB Area
+        wt_s = gnb_s = np.nan
+        subp = "F"
+        mlabel = f"Pre vs Post {drug} – Unitary GABAB Area [Paired]"
+        cond   = f"{drug} – Unitary (Paired)"
     else:
         wt_s = gnb_s = np.nan
         subp, mlabel, cond = "?", comp, drug
