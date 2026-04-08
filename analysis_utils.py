@@ -1158,15 +1158,9 @@ def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
             if vm_rest >= vm_rest_threshold:   # exclude depolarised / unhealthy cells
                 continue
 
-            # --- Rin: steady-state deflection (last 50% of pulse, -2 ms guard) ---
-            pulse_samples = p_end - p_start + 1
-            ss_start = p_start + int(pulse_samples * 0.5)
-            ss_end   = max(ss_start + 1, p_end - int(2 / dt_ms))
-            if ss_end <= ss_start:
-                continue
-
-            steady_v = float(np.mean(sweep[ss_start:ss_end]))
-            delta_v  = steady_v - vm_rest
+            # --- Rin: peak deflection within pulse window (-2 ms guard) ---
+            peak_v   = float(np.min(sweep[p_start:p_end]))   # hyperpolarising pulse → min
+            delta_v  = peak_v - vm_rest
 
             if detected_amp == 0:
                 continue
@@ -1213,23 +1207,36 @@ def calculate_input_resistance_from_test_pulse(trace, sampling_rate=20000,
     base_start_idx = 0
     base_end_idx = int((pulse_start_ms - 5) / dt_ms)
     
+    # --- STEADY STATE (commented out for peak comparison) ---
     # Steady State: Last 50% of the pulse (avoid onset transient)
-    pulse_end_ms = pulse_start_ms + pulse_duration_ms
-    steady_start_ms = pulse_start_ms + (pulse_duration_ms * 0.5)
-    
-    steady_start_idx = int(steady_start_ms / dt_ms)
-    steady_end_idx = int((pulse_end_ms - 2) / dt_ms) # End slighty before pulse off
-    
+    # pulse_end_ms = pulse_start_ms + pulse_duration_ms
+    # steady_start_ms = pulse_start_ms + (pulse_duration_ms * 0.5)
+    # steady_start_idx = int(steady_start_ms / dt_ms)
+    # steady_end_idx = int((pulse_end_ms - 2) / dt_ms)  # End slightly before pulse off
+    # steady_v = np.mean(trace[steady_start_idx:steady_end_idx])
+
+    # --- PEAK (testing) ---
+    # Use the peak deflection within the pulse window instead of steady-state mean
+    pulse_start_idx = int(pulse_start_ms / dt_ms)
+    pulse_end_idx   = int((pulse_start_ms + pulse_duration_ms - 2) / dt_ms)
+
     # Safety checks
-    if len(trace) < steady_end_idx:
+    if len(trace) < pulse_end_idx:
         return np.nan
     if base_end_idx <= base_start_idx:
         return np.nan
         
     baseline_v = np.mean(trace[base_start_idx:base_end_idx])
-    steady_v = np.mean(trace[steady_start_idx:steady_end_idx])
-    
-    delta_v_mV = steady_v - baseline_v
+
+    # For negative pulse → hyperpolarizing → peak = minimum voltage
+    # For positive pulse → depolarizing  → peak = maximum voltage
+    pulse_window = trace[pulse_start_idx:pulse_end_idx]
+    if pulse_amp_pA < 0:
+        peak_v = float(np.min(pulse_window))
+    else:
+        peak_v = float(np.max(pulse_window))
+
+    delta_v_mV = peak_v - baseline_v
     
     # Calculate Resistance (V=IR -> R=V/I)
     # Unit Analysis:
