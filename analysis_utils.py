@@ -4641,7 +4641,7 @@ def load_and_concat_behavior_files(base_dir, file_map):
         
     return pd.concat(dfs, ignore_index=True)
 
-def process_anxiety_ratios(df):
+def process_f_ratios(df):
     """
     Calculates Center / Total time ratio for anxiety analysis.
     Ratio = Center Time / (Center Time + Outer Time)

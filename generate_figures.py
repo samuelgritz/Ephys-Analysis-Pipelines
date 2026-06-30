@@ -1266,7 +1266,8 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
 
     ax_wt_50 = fig.add_subplot(gs_row_a[0, 0])
     plot_single_example_ISI(ax_wt_50, df_traces, df_amplitudes, 'WT', 50,
-                            pathway_label='ECIII Input', annotate=True, rank=8)
+                            pathway_label='ECIII Input', annotate=True,
+                            target_cell='20240530_c1')
     add_subplot_label(ax_wt_50, 'A', x=-0.05)
     ax_wt_50.text(-0.15, 0.5, 'WT', transform=ax_wt_50.transAxes, ha='right',
                   va='center', fontweight='bold', fontsize=10, rotation=90)
@@ -1274,7 +1275,8 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
 
     ax_wt_10 = fig.add_subplot(gs_row_a[0, 1])
     plot_single_example_ISI(ax_wt_10, df_traces, df_amplitudes, 'WT', 10,
-                            pathway_label='ECIII Input', annotate=False)
+                            pathway_label='ECIII Input', annotate=False,
+                            target_cell='20240530_c1')
     ax_wt_10.set_title('ECIII — ISI 10 ms', fontsize=9, fontweight='bold')
 
     # Add scale bar to 50ms panel
@@ -1289,7 +1291,8 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
 
     ax_mut_50 = fig.add_subplot(gs_row_b[0, 0])
     plot_single_example_ISI(ax_mut_50, df_traces, df_amplitudes, 'I80T/+', 50,
-                            pathway_label='ECIII Input', annotate=False)
+                            pathway_label='ECIII Input', annotate=False,
+                            target_cell='20240905_c1')
     add_subplot_label(ax_mut_50, 'B', x=-0.05)
     ax_mut_50.text(-0.15, 0.5, 'I80T/+', transform=ax_mut_50.transAxes, ha='right',
                    va='center', fontweight='bold', fontsize=10, rotation=90,
@@ -1297,7 +1300,8 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
 
     ax_mut_10 = fig.add_subplot(gs_row_b[0, 1])
     plot_single_example_ISI(ax_mut_10, df_traces, df_amplitudes, 'I80T/+', 10,
-                            pathway_label='ECIII Input', annotate=False)
+                            pathway_label='ECIII Input', annotate=False,
+                            target_cell='20240905_c1')
     # Legend on right panel of bottom trace row
     ax_mut_10.legend(frameon=False, fontsize=7, loc='lower right',
                      bbox_to_anchor=(1.02, -0.08), ncol=1)

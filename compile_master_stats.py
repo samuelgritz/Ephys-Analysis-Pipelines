@@ -18,6 +18,7 @@ Output columns (per row):
     I80T_N          – Gnb1^I80T/+ sample size
     Test_Used       – statistical test
     Statistic       – test statistic value
+    Degrees_of_Freedom – degrees of freedom (n1+n2-2 for MWU; NumDF,DenDF for ANOVA)
     P_Value         – raw p-value (or FDR-corrected for post-hocs)
     Significance    – symbol (ns / * / ** / ***)
     Notes           – extra context (effect term, ISI, interaction p, etc.)
@@ -52,9 +53,12 @@ def p_to_sig(p):
 def row(figure, subpanel, metric, pathway, condition,
         wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n,
         test_used, statistic, p_value, significance,
-        notes=""):
+        notes="", degrees_of_freedom=None):
     def _f(x): return round(float(x), 4) if pd.notna(x) else np.nan
     def _i(x): return int(x) if pd.notna(x) else np.nan
+    # NOTE: degrees_of_freedom is only populated when explicitly passed from
+    # parametric tests (ANOVA NumDF/DenDF, LME post-hoc df).
+    # Non-parametric tests (Mann-Whitney U, Wilcoxon, KS) do not produce df.
     return dict(
         Figure=figure, Subpanel=subpanel, Metric=metric,
         Pathway=pathway, Condition=condition,
@@ -64,6 +68,7 @@ def row(figure, subpanel, metric, pathway, condition,
         I80T_N=_i(i80t_n),
         Test_Used=str(test_used),
         Statistic=statistic,
+        Degrees_of_Freedom=degrees_of_freedom if degrees_of_freedom is not None else np.nan,
         P_Value=float(p_value) if pd.notna(p_value) else np.nan,
         Significance=str(significance),
         Notes=str(notes),
@@ -227,20 +232,28 @@ rows.append(row(
 
 # F-I 2-way RM ANOVA model terms
 for _, st in df_fi_isi[df_fi_isi["Analysis"] == "F-I Curve"].iterrows():
+    fi_df1 = st.get("df1", np.nan)
+    fi_df2 = st.get("df2", np.nan)
+    fi_df_str = f"{int(fi_df1)},{int(fi_df2)}" if pd.notna(fi_df1) and pd.notna(fi_df2) else np.nan
     rows.append(row(
         "Figure 2", "E", f"F-I Curve ANOVA: {st['Comparison']}", "N/A", "N/A",
         np.nan,np.nan,np.nan, np.nan,np.nan,np.nan,
         st["Test"], st.get("F_value",np.nan), st["p_value"], st["significance"],
-        notes="2-way RM ANOVA model term"
+        notes="2-way RM ANOVA model term",
+        degrees_of_freedom=fi_df_str
     ))
 
 # ISI adaptation ANOVA
 for _, st in df_isi_a.iterrows():
+    isi_df1 = st.get("df1", np.nan)
+    isi_df2 = st.get("df2", np.nan)
+    isi_df_str = f"{int(isi_df1)},{int(isi_df2)}" if pd.notna(isi_df1) and pd.notna(isi_df2) else np.nan
     rows.append(row(
         "Figure 2", "I", f"ISI Adaptation ANOVA: {st['Term']}", "N/A", "N/A",
         np.nan,np.nan,np.nan, np.nan,np.nan,np.nan,
         "2-way RM ANOVA", st["F_value"], st["p_value"], st["significance"],
-        notes="Model term"
+        notes="Model term",
+        degrees_of_freedom=isi_df_str
     ))
 
 
@@ -365,6 +378,7 @@ for _, st in df_anova56.iterrows():
     p_val  = st["P_Value"]
     sig    = st.get("Significant", p_to_sig(p_val))
 
+    anova_df_str = f"{int(num_df)},{round(den_df,1)}" if pd.notna(num_df) and pd.notna(den_df) else np.nan
     rows.append(row(
         fig_label,
         f"{subp} – {pw} – ANOVA",
@@ -376,7 +390,8 @@ for _, st in df_anova56.iterrows():
         "LME Type III ANOVA (lmerTest)",
         f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={round(f_val,3) if pd.notna(f_val) else '?'}",
         p_val, sig,
-        notes=f"ANOVA term: {effect}"
+        notes=f"ANOVA term: {effect}",
+        degrees_of_freedom=anova_df_str
     ))
 
 # ── LAYER 2: FDR-corrected per-ISI post-hoc contrasts ────────────────────────
@@ -399,7 +414,7 @@ for _, st in df_fdr56.iterrows():
 
     isi_val = None
     for v in [10, 25, 50, 100, 300]:
-        if str(v) in isi_raw:
+        if isi_raw == f"ISI{v}":
             isi_val = v
             break
 
@@ -418,6 +433,7 @@ for _, st in df_fdr56.iterrows():
     main_p   = st["Main_Effect_p"]
     inter_p  = st["Interaction_p"]
 
+    fdr_df_val = round(df_val, 1) if pd.notna(df_val) else np.nan
     rows.append(row(
         fig_label,
         f"{subp} – {pw} – ISI {isi_val} ms",
@@ -436,7 +452,8 @@ for _, st in df_fdr56.iterrows():
             f"FDR post-hoc at ISI {isi_val} ms | "
             f"Genotype main effect p={round(main_p,4) if pd.notna(main_p) else 'NA'} | "
             f"Interaction p={round(inter_p,4) if pd.notna(inter_p) else 'NA'}"
-        )
+        ),
+        degrees_of_freedom=fdr_df_val
     ))
 
 
@@ -573,7 +590,7 @@ for _, st in imb.iterrows():
     num_df = st["NumDF"]
     den_df = st["DenDF"]
     stat_str = f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={round(f_val,3) if pd.notna(f_val) else '?'}"
-    
+    ei_anova_df_str = f"{int(num_df)},{round(den_df,1)}" if pd.notna(num_df) and pd.notna(den_df) else np.nan
     rows.append(row(
         "Supplemental Figure 1", f"E:I Imbalance – {pw}",
         "E:I Imbalance Index (EPSP / (EPSP+|IPSP|))", pw, cond_label,
@@ -585,7 +602,8 @@ for _, st in imb.iterrows():
         len(gnb_cells),
         "LME Type III ANOVA (lmerTest)", stat_str,
         st["P_Value"], st["Significant"],
-        notes=f"ANOVA term: {eff}"
+        notes=f"ANOVA term: {eff}",
+        degrees_of_freedom=ei_anova_df_str
     ))
 
 
@@ -614,7 +632,7 @@ COLUMNS = [
     "Figure","Subpanel","Metric","Pathway","Condition",
     "WT_Mean","WT_SEM","WT_N",
     "I80T_Mean","I80T_SEM","I80T_N",
-    "Test_Used","Statistic","P_Value","Significance",
+    "Test_Used","Statistic","Degrees_of_Freedom","P_Value","Significance",
     "Notes",
 ]
 

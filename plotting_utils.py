@@ -2501,12 +2501,16 @@ def export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, output_pa
         gnb1_mean = gnb1_data.mean() if len(gnb1_data) > 0 else np.nan
         gnb1_sem = gnb1_data.std() / np.sqrt(len(gnb1_data)) if len(gnb1_data) > 0 else np.nan
         
-        # Get p-value
+        # Get p-value, test type, and statistic
         p_val = np.nan
+        test_type = ''
+        test_stat = np.nan
         if df_stats is not None:
             match = df_stats[df_stats['Comparison'].str.contains(stats_key, regex=False, na=False)]
             if not match.empty:
                 p_val = match.iloc[0]['P_Value']
+                test_type = match.iloc[0].get('Test_Used', '')
+                test_stat = match.iloc[0].get('Statistic', np.nan)
         
         rows.append({
             'Property': display,
@@ -2516,6 +2520,8 @@ def export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, output_pa
             'GNB1 Mean': gnb1_mean,
             'GNB1 SEM': gnb1_sem,
             'GNB1 N': len(gnb1_data),
+            'Test': test_type,
+            'Statistic': test_stat,
             'p-value': p_val
         })
     
@@ -3222,7 +3228,8 @@ def plot_ISI_breakdown_mean_sem(ax, df_traces, genotype, pathway_label, isi=50, 
 
 
 def plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, isi,
-                            pathway_label='ECIII Input', annotate=False, rank=0):
+                            pathway_label='ECIII Input', annotate=False, rank=0,
+                            target_cell=None):
     """
     Plot a single-cell example trace (Control vs Gabazine) for a specific genotype and ISI.
     Shows zero dashed line and GABAB area shading on all panels.
@@ -3235,6 +3242,7 @@ def plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, isi,
         isi: ISI value (e.g. 50, 10)
         pathway_label: e.g. 'ECIII Input', 'CA3 Apical Input', 'CA3 Basal Input'
         annotate: Boolean, whether to add component arrows/labels
+        target_cell: Optional Cell_ID string to use a specific cell instead of auto-selecting
     """
     pathway_map = {
         'ECIII Input': 'perforant',
@@ -3254,28 +3262,32 @@ def plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, isi,
     else:
         genotype_targets = ['WT']
 
-    # --- Auto-select best cell for this genotype ---
-    sub_amp = df_amplitudes[
-        (df_amplitudes['ISI'] == isi) &
-        (df_amplitudes['Pathway'] == pathway_name) &
-        df_amplitudes['Genotype'].isin(genotype_targets)
-    ].copy()
+    if target_cell is not None:
+        # Use the specified cell directly
+        best_cell = target_cell
+    else:
+        # --- Auto-select best cell for this genotype ---
+        sub_amp = df_amplitudes[
+            (df_amplitudes['ISI'] == isi) &
+            (df_amplitudes['Pathway'] == pathway_name) &
+            df_amplitudes['Genotype'].isin(genotype_targets)
+        ].copy()
 
-    if len(sub_amp) == 0:
-        ax.text(0.5, 0.5, 'No data', ha='center', va='center',
-                transform=ax.transAxes, fontsize=8)
-        ax.axis('off')
-        return
+        if len(sub_amp) == 0:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                    transform=ax.transAxes, fontsize=8)
+            ax.axis('off')
+            return
 
-    # Score: prefer cells with large gabazine peak + large GABAB area
-    gab_peak  = sub_amp['Gabazine_Amplitude'].fillna(0)
-    gabab_neg = sub_amp['GABAB_Area'].fillna(0).abs()
-    norm_peak = (gab_peak  - gab_peak.min())  / (gab_peak.max()  - gab_peak.min()  + 1e-9)
-    norm_neg  = (gabab_neg - gabab_neg.min()) / (gabab_neg.max() - gabab_neg.min() + 1e-9)
-    sub_amp['_score'] = norm_peak + 2.0 * norm_neg
-    sorted_cells = sub_amp.sort_values('_score', ascending=False)
-    pick_idx = min(rank, len(sorted_cells) - 1)
-    best_cell = sorted_cells.iloc[pick_idx]['Cell_ID']
+        # Score: prefer cells with large gabazine peak + large GABAB area
+        gab_peak  = sub_amp['Gabazine_Amplitude'].fillna(0)
+        gabab_neg = sub_amp['GABAB_Area'].fillna(0).abs()
+        norm_peak = (gab_peak  - gab_peak.min())  / (gab_peak.max()  - gab_peak.min()  + 1e-9)
+        norm_neg  = (gabab_neg - gabab_neg.min()) / (gabab_neg.max() - gabab_neg.min() + 1e-9)
+        sub_amp['_score'] = norm_peak + 2.0 * norm_neg
+        sorted_cells = sub_amp.sort_values('_score', ascending=False)
+        pick_idx = min(rank, len(sorted_cells) - 1)
+        best_cell = sorted_cells.iloc[pick_idx]['Cell_ID']
 
     # --- Fetch trace ---
     sub_trace = df_traces[
