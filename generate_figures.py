@@ -402,7 +402,7 @@ def plot_figure_2_physiology():
     if raw_traces_path and master_df is not None:
         from plotting_utils import plot_input_resistance_comparison
         plot_input_resistance_comparison(ax_a_wt, ax_a_gnb, raw_traces_path, master_df,
-                                    target_wt='04232024_c2', target_gnb1='07302024_c3')
+                                    target_wt='04232024_c2', target_gnb1='02262024_c1')
         ax_a_wt.set_ylim(-85, -60)
         ax_a_gnb.set_ylim(-85, -60)
     else:
@@ -413,7 +413,7 @@ def plot_figure_2_physiology():
     ax_a = fig.add_subplot(gs_A[1, :])
     if df_intrinsic is not None and 'Input_Resistance_MOhm' in df_intrinsic.columns:
         plot_bar_scatter(ax_a, df_intrinsic, 'Genotype', 'Input_Resistance_MOhm',
-                         'Genotype', order=['WT', 'I80T/+'], ymin=0, ymax=300)
+                         'Genotype', order=['WT', 'I80T/+'], ymin=0, ymax=400)
         ax_a.set_ylabel('Input Resistance (MΩ)', fontsize=7)
         ax_a.set_title('Input Resistance', fontsize=8)
         ax_a.set_box_aspect(1)
