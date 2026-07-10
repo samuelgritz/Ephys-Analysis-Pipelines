@@ -2782,11 +2782,11 @@ def plot_input_resistance_comparison(ax_wt, ax_gnb1, data_dir, master_df, target
             ax.text(0.02, 0.95, genotype, transform=ax.transAxes, fontsize=11, fontweight='bold', va='top', color=label_color)
             
             # Zoom in on 100 ms test pulse (step_start=50 ms, step_duration=100 ms)
-            ax.set_xlim(20, 200)
+            ax.set_xlim(20, 280)
             ax.axis('off')
             
             if genotype in ('GNB1', 'I80T/+'):
-                add_scale_bar(ax, 100, 5, x_pos=0.8, y_pos=0.15)
+                add_scale_bar(ax, 100, 5, x_pos=0.55, y_pos=0.15)
         except Exception as e:
             plot_trace_placeholder(ax, f"Error: {e}")
     

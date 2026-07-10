@@ -402,7 +402,7 @@ def plot_figure_2_physiology():
     if raw_traces_path and master_df is not None:
         from plotting_utils import plot_input_resistance_comparison
         plot_input_resistance_comparison(ax_a_wt, ax_a_gnb, raw_traces_path, master_df,
-                                    target_wt='04232024_c2', target_gnb1='05142025_c2')
+                                    target_wt='04232024_c2', target_gnb1='02132024_c1')
         ax_a_wt.set_ylim(-85, -60)
         ax_a_gnb.set_ylim(-85, -60)
     else:
