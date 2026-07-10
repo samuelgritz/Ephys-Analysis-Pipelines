@@ -1118,8 +1118,8 @@ def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
         except Exception:
             continue
 
-        vm_vals  = []
-        rin_vals = []
+        first_vm  = None
+        first_rin = None
 
         for _, row in df.iterrows():
             sweep_raw = row.get('sweep', None)
@@ -1162,8 +1162,8 @@ def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
                 continue
                 
             pulse_len_ms = pulse_len_samples * dt_ms
-            # Only use test pulses with a 100 ms duration (tolerance: 90 to 110 ms)
-            if not (90 <= pulse_len_ms <= 110):
+            # Accept any test pulse of at least 90 ms duration (handles both 100ms and 150ms steps)
+            if pulse_len_ms < 90:
                 continue
 
             detected_amp = float(np.median(sc[p_start:p_end + 1]))
@@ -1177,8 +1177,10 @@ def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
             if vm_rest >= vm_rest_threshold:   # exclude depolarised / unhealthy cells
                 continue
 
-            # --- Rin: peak deflection within pulse window (-2 ms guard) ---
-            peak_v   = float(np.min(sweep[p_start:p_end]))   # hyperpolarising pulse → min
+            # --- Rin: peak deflection within pulse window (limit to first 100 ms) ---
+            # Enforce exactly a 100 ms measurement window to standardize calculations
+            p_end_calc = min(p_end, p_start + int(100.0 / dt_ms) - 1)
+            peak_v   = float(np.min(sweep[p_start:p_end_calc + 1]))   # hyperpolarising pulse → min
             delta_v  = peak_v - vm_rest
 
             if detected_amp == 0:
@@ -1188,14 +1190,16 @@ def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
             if rin <= 0:   # sanity check (negative pulse -> negative delta -> positive Rin)
                 continue
 
-            vm_vals.append(vm_rest)
-            rin_vals.append(rin)
+            # Successfully extracted Rin and Vm from the FIRST valid sweep
+            first_vm = vm_rest
+            first_rin = rin
+            break
 
-        if vm_vals:
+        if first_vm is not None:
             results[cell_id] = {
-                'Vm_rest_mV':            float(np.nanmean(vm_vals)),
-                'Input_Resistance_MOhm': float(np.nanmean(rin_vals)),
-                'n_sweeps':              len(vm_vals)
+                'Vm_rest_mV':            float(first_vm),
+                'Input_Resistance_MOhm': float(first_rin),
+                'n_sweeps':              1
             }
 
     n_sweeps_total = sum(v['n_sweeps'] for v in results.values())
