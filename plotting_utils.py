@@ -2737,7 +2737,7 @@ def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='
             ax.set_xlim(200, 950)
             ax.axis('off')
             if genotype in ('GNB1', 'I80T/+'):
-                add_scale_bar(ax, 100, 10, x_pos=0.8, y_pos=0.15)
+                add_scale_bar(ax, 200, 10, x_pos=0.8, y_pos=0.15)
         except Exception as e:
             print(f"Error plotting voltage sag for {cell_id}: {e}")
             plot_trace_placeholder(ax, f"Error: {e}")
@@ -2785,7 +2785,7 @@ def plot_input_resistance_comparison(ax_wt, ax_gnb1, data_dir, master_df, target
             ax.axis('off')
             
             if genotype in ('GNB1', 'I80T/+'):
-                add_scale_bar(ax, 50, 5, x_pos=0.8, y_pos=0.15)
+                add_scale_bar(ax, 100, 5, x_pos=0.8, y_pos=0.15)
         except Exception as e:
             plot_trace_placeholder(ax, f"Error: {e}")
     
