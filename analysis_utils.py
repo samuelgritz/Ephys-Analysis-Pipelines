@@ -1157,7 +1157,13 @@ def get_vm_and_rin_from_test_pulses(data_dir, master_df=None,
                 continue
 
             p_start, p_end = max(runs, key=lambda r: r[1] - r[0])
-            if (p_end - p_start + 1) < min_pulse_samples:
+            pulse_len_samples = p_end - p_start + 1
+            if pulse_len_samples < min_pulse_samples:
+                continue
+                
+            pulse_len_ms = pulse_len_samples * dt_ms
+            # Only use test pulses with a 100 ms duration (tolerance: 90 to 110 ms)
+            if not (90 <= pulse_len_ms <= 110):
                 continue
 
             detected_amp = float(np.median(sc[p_start:p_end + 1]))
