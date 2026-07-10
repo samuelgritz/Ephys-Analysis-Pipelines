@@ -437,7 +437,7 @@ def plot_figure_2_physiology():
     if raw_traces_path and master_df is not None:
         from plotting_utils import plot_voltage_sag_comparison
         plot_voltage_sag_comparison(ax_b_wt, ax_b_gnb, raw_traces_path, master_df,
-                                    target_wt='07092024_c1', target_gnb1='01142025_c1')
+                                    target_wt='07092024_c1', target_gnb1='09052024_c2')
         ax_b_wt.set_ylim(-95, -50)
         ax_b_gnb.set_ylim(-95, -50)
     else:
