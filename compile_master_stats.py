@@ -86,7 +86,7 @@ print("Building Figure 1 rows …")
 df_w    = pd.read_csv("paper_data/Behavior_Analysis/Mouse_Weights_Processed.csv")
 df_loc  = pd.read_csv("paper_data/Behavior_Analysis/Open_Field_Locomotion_Trial1.csv")
 df_anx  = pd.read_csv("paper_data/Behavior_Analysis/Open_Field_Anxiety_Processed.csv")
-df_dvc  = pd.read_csv("paper_data/DVC_Analysis/Aggregated_DVC_Data_Master.csv")
+df_dvc_cages = pd.read_csv("paper_data/DVC_Analysis/Cage_Specific_Hours_Summary.csv")
 df_tmaze= pd.read_csv("paper_data/Behavior_Analysis/T_Maze_Alternations.csv")
 df_s1   = pd.read_csv("paper_data/Behavior_Analysis/Stats_Results_Figure_1.csv")
 
@@ -106,50 +106,54 @@ for tp in ["P8-P10", "P28", "Adult"]:
         notes="Weight in grams"
     ))
 
-# Fig 1C – locomotion
+# Fig 1D – locomotion
 wt_loc  = df_loc[df_loc["Genotype"] == "WT"]["Distance (m)"]
 gnb_loc = df_loc[df_loc["Genotype"] == "GNB1"]["Distance (m)"]
 st = df_s1[df_s1["Figure_Panel"] == "Fig 1C"].iloc[0]
 rows.append(row(
-    "Figure 1", "C", "Open Field Total Distance (m)", "N/A", "N/A",
+    "Figure 1", "D", "Open Field Total Distance (m)", "N/A", "N/A",
     wt_loc.mean(), wt_loc.sem(), len(wt_loc),
     gnb_loc.mean(), gnb_loc.sem(), len(gnb_loc),
     st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
 ))
 
-# Fig 1D – anxiety ratio
+# Fig 1E – anxiety ratio
 wt_anx  = df_anx[df_anx["Genotype"] == "WT"]["Center_Outer_Time_Ratio"]
 gnb_anx = df_anx[df_anx["Genotype"] == "GNB1"]["Center_Outer_Time_Ratio"]
 st = df_s1[df_s1["Figure_Panel"] == "Fig 1D"].iloc[0]
 rows.append(row(
-    "Figure 1", "D", "Open Field % Time in Center", "N/A", "N/A",
+    "Figure 1", "E", "Open Field % Time in Center", "N/A", "N/A",
     wt_anx.mean(), wt_anx.sem(), len(wt_anx),
     gnb_anx.mean(), gnb_anx.sem(), len(gnb_anx),
     st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"]
 ))
 
-# Fig 1G – DVC dark phase
-dark = df_dvc[(df_dvc["Hour"] >= 20) | (df_dvc["Hour"] < 8)]
-cage_sum = dark.groupby(["Cage_ID","Genotype"])["Activity_Value"].mean().reset_index()
-wt_dvc  = cage_sum[cage_sum["Genotype"] == "WT"]["Activity_Value"]
-gnb_dvc = cage_sum[cage_sum["Genotype"] == "GNB1"]["Activity_Value"]
-st = df_s1[df_s1["Figure_Panel"] == "Fig 1G"].iloc[0]
+# Fig 1G – DVC total activity in dark phase (summed, in metres)
+# Uses Cage_Specific_Hours_Summary.csv → Sum_All_Dark, matching generate_figures.py
+wt_dvc  = df_dvc_cages[df_dvc_cages["Genotype"] == "WT"]["Sum_All_Dark"]
+gnb_dvc = df_dvc_cages[df_dvc_cages["Genotype"] == "GNB1"]["Sum_All_Dark"]
+st = df_s1[df_s1["Figure_Panel"] == "Fig 1G"].iloc[0]   # stats file still uses old label
 rows.append(row(
-    "Figure 1", "G", "DVC Dark Phase Activity (a.u.)", "N/A", "N/A",
+    "Figure 1", "G", "Total Activity in Dark Phase (m)", "N/A", "N/A",
     wt_dvc.mean(), wt_dvc.sem(), len(wt_dvc),
     gnb_dvc.mean(), gnb_dvc.sem(), len(gnb_dvc),
     st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
-    notes="Mean activity per cage across dark-phase hours"
+    notes="Summed cage activity across dark-phase hours"
 ))
 
-# Fig 1I, 1J, 1K – load zone-entries file for distance & arm counts
+# Fig 1I, 1J, 1K – T-Maze panels
+# Stats file uses old labels (Fig 1I/1J/1K) → map to actual figure panels (I/J/K)
 df_tmaze_entries = pd.read_csv("paper_data/Behavior_Analysis/T_Maze_Zone_Entries.csv") \
     if os.path.exists("paper_data/Behavior_Analysis/T_Maze_Zone_Entries.csv") else pd.DataFrame()
 
 if not df_tmaze_entries.empty:
+    # Total Arm Entries = Left + Right only (Start zone has missing data for some animals)
     df_tmaze_entries["Total_Arm_Entries"] = (
         df_tmaze_entries["Left Arm : entries"] + df_tmaze_entries["Right Arm : entries"]
     )
+
+# Map stats-file panel keys to correct figure subpanel letters
+TMAZE_PANEL_MAP = {"Fig 1I": "I", "Fig 1J": "J", "Fig 1K": "K"}
 
 for panel_key, metric_label, src_df, col in [
     ("Fig 1I", "T-Maze Distance Traveled (m)", df_tmaze_entries, "Distance (m)"),
@@ -165,7 +169,7 @@ for panel_key, metric_label, src_df, col in [
     else:
         wt_v = gnb_v = pd.Series(dtype=float)
     rows.append(row(
-        "Figure 1", panel_key.replace("Fig 1",""), metric_label, "N/A", "N/A",
+        "Figure 1", TMAZE_PANEL_MAP[panel_key], metric_label, "N/A", "N/A",
         wt_v.mean()  if len(wt_v)  else np.nan,
         wt_v.sem()   if len(wt_v) > 1 else np.nan,
         len(wt_v)    if len(wt_v)  else np.nan,

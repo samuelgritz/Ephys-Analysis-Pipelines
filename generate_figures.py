@@ -113,9 +113,11 @@ def plot_figure_1_behavior():
     df_tmaze_entries = load_data('Behavior_Analysis', 'T_Maze_Zone_Entries.csv')
     df_stats = load_data('Behavior_Analysis', 'Stats_Results_Figure_1.csv')
 
-    # Calculate Total Entries for T-Maze
+    # Calculate Total Arm Entries for T-Maze (Left + Right arms only)
     if df_tmaze_entries is not None:
-        df_tmaze_entries['Total_Entries'] = df_tmaze_entries[['Start : entries', 'Left Arm : entries', 'Right Arm : entries']].sum(axis=1, skipna=True)
+        df_tmaze_entries['Total_Arm_Entries'] = (
+            df_tmaze_entries['Left Arm : entries'] + df_tmaze_entries['Right Arm : entries']
+        )
 
     # Rename GNB1 → I80T/+ for display
     df_weights = rename_genotype(df_weights)
@@ -132,9 +134,9 @@ def plot_figure_1_behavior():
     # =========================================================================
     # FIGURE LAYOUT (matching reference):
     # ROW 1: A (Mouse Image placeholder) | B (Body Weight - wider)
-    # ROW 2: C (Tracing placeholder + Locomotion bar) | D (Tracing placeholder + Anxiety bar)
-    # ROW 3: E (Circadian Activity - wide) | F (Dark Phase bar)
-    # ROW 4: G (T-maze tracing placeholder) | H (Distance) | I (Entries) | J (Alternation)
+    # ROW 2: C (Locomotion tracing) + D (Locomotion bar) | E (Anxiety tracing + bar)
+    # ROW 3: F (Circadian Activity - wide) | G (Dark Phase bar)
+    # ROW 4: H (T-maze tracing placeholder) | I (Distance) | J (Entries) | K (Alternation)
     # =========================================================================
     fig = plt.figure(figsize=(6.93, 9))  # 17.6cm width
     
@@ -179,7 +181,7 @@ def plot_figure_1_behavior():
         annotate_from_stats(ax_b, df_stats, "Fig 1B", "P28", x1=1, x2=1, y_pos=get_y_for_time('P28'), bracket=True)
         annotate_from_stats(ax_b, df_stats, "Fig 1B", "Adult", x1=2, x2=2, y_pos=get_y_for_time('Adult'), bracket=True)
 
-    # ===== ROW 2: C (Tracing + Locomotion) | D (Tracing + Anxiety) =====
+    # ===== ROW 2: C (Tracing) + D (Locomotion bar) | E (Anxiety) =====
     gs_row2 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1], wspace=0.4)
     
     # Panel C: Open Field Locomotion (tracing placeholder + bar)
@@ -195,26 +197,27 @@ def plot_figure_1_behavior():
     ax_c_trace.set_yticks([])
     for spine in ax_c_trace.spines.values():
         spine.set_visible(False)
-    # C-right: bar plot
+    # D: Locomotion bar plot
     ax_c = fig.add_subplot(gs_c[1])
+    add_subplot_label(ax_c, "D")
     if df_of_loco is not None:
         plot_bar_scatter(ax_c, df_of_loco, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order, ymax=50)
         ax_c.set_title('Locomotion (Open Field)', fontsize=8)
         annotate_from_stats(ax_c, df_stats, "Fig 1C", "Locomotion", x1=0, x2=1, y_pos=get_safe_y(df_of_loco['Distance (m)']))
 
-    # Panel D: Anxiety (tracing placeholder + bar)
+    # Panel E: Anxiety (tracing placeholder + bar)
     gs_d = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_row2[1], wspace=0.2,
                                             width_ratios=[0.6, 1])
-    # D-left: tracing placeholder
+    # E-left: tracing placeholder
     ax_d_trace = fig.add_subplot(gs_d[0])
-    add_subplot_label(ax_d_trace, "D")
+    add_subplot_label(ax_d_trace, "E")
     ax_d_trace.text(0.5, 0.5, 'Open Field\nAnxiety Tracing\n(To be added)', 
               ha='center', va='center', fontsize=7, color='gray', style='italic')
     ax_d_trace.set_facecolor('#f8f8f8')
     ax_d_trace.set_xticks([])
     for spine in ax_d_trace.spines.values():
         spine.set_visible(False)
-    # D-right: bar plot
+    # E-right: bar plot
     ax_d = fig.add_subplot(gs_d[1])
     if df_of_anx is not None:
         plot_bar_scatter(ax_d, df_of_anx, 'Genotype', 'Center_Outer_Time_Ratio', 'Genotype', order=geno_order)
@@ -225,13 +228,13 @@ def plot_figure_1_behavior():
         ax_d.set_yticks([0, 10, 20, 30])
         annotate_from_stats(ax_d, df_stats, "Fig 1D", "Anxiety", x1=0, x2=1, y_pos=get_safe_y(df_of_anx['Center_Outer_Time_Ratio']))
 
-    # ===== ROW 3: E (Circadian Activity) | F (Total Dark Phase) =====
+    # ===== ROW 3: F (Circadian Activity) | G (Total Dark Phase) =====
     gs_row3 = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[2], wspace=0.4, 
                                                width_ratios=[1.2, 1])
     
-    # Panel E: Circadian Activity
+    # Panel F: Circadian Activity
     ax_e = fig.add_subplot(gs_row3[0])
-    add_subplot_label(ax_e, "E")
+    add_subplot_label(ax_e, "F")
     if df_dvc_hourly is not None:
         plot_dvc_hourly(ax_e, df_dvc_hourly)
         ax_e.set_title('Circadian Activity', fontsize=8)
@@ -242,9 +245,9 @@ def plot_figure_1_behavior():
         labels.append('Dark Phase')
         ax_e.legend(handles=handles, labels=labels, frameon=False, loc='upper left', fontsize=7)
 
-    # Panel F: Total Activity (Dark Phase)
+    # Panel G: Total Activity (Dark Phase)
     ax_f = fig.add_subplot(gs_row3[1])
-    add_subplot_label(ax_f, "F")
+    add_subplot_label(ax_f, "G")
     if df_dvc_cages is not None:
         plot_bar_scatter(ax_f, df_dvc_cages, 'Genotype', 'Sum_All_Dark', 'Genotype', order=geno_order)
         ax_f.set_title('Total Activity (Dark Phase)', fontsize=8)
@@ -253,13 +256,13 @@ def plot_figure_1_behavior():
         if df_stats is not None:
             annotate_from_stats(ax_f, df_stats, "Fig 1G", "DVC Dark Phase", x1=0, x2=1, y_pos=get_safe_y(df_dvc_cages['Sum_All_Dark']))
 
-    # ===== ROW 4: G (T-maze tracing) | H (Distance) | I (Entries) | J (Alternation) =====
+    # ===== ROW 4: H (T-maze tracing) | I (Distance) | J (Entries) | K (Alternation) =====
     gs_row4 = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[3], wspace=0.5, 
                                                width_ratios=[1, 1, 1, 1])
     
-    # Panel G: T-Maze Tracing Placeholder
+    # Panel H: T-Maze Tracing Placeholder
     ax_g = fig.add_subplot(gs_row4[0])
-    add_subplot_label(ax_g, "G")
+    add_subplot_label(ax_g, "H")
     ax_g.text(0.5, 0.75, 'WT', ha='center', va='center', fontsize=8, fontweight='bold')
     ax_g.text(0.5, 0.25, 'I80T/+', ha='center', va='center', fontsize=8, fontweight='bold', color='red')
     ax_g.set_xticks([])
@@ -268,27 +271,27 @@ def plot_figure_1_behavior():
     for spine in ax_g.spines.values():
         spine.set_visible(False)
     
-    # Panel H: Distance Traveled
+    # Panel I: Distance Traveled
     ax_h = fig.add_subplot(gs_row4[1])
-    add_subplot_label(ax_h, "H")
+    add_subplot_label(ax_h, "I")
     if df_tmaze_entries is not None:
         plot_bar_scatter(ax_h, df_tmaze_entries, 'Genotype', 'Distance (m)', 'Genotype', order=geno_order, ymax=50)
         ax_h.set_title('Distance Traveled', fontsize=8)
         ax_h.set_ylabel('Distance (m)')
         annotate_from_stats(ax_h, df_stats, "Fig 1I", "Distance", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Distance (m)']))
     
-    # Panel I: Total Port Entries
+    # Panel J: Total Arm Entries
     ax_i = fig.add_subplot(gs_row4[2])
-    add_subplot_label(ax_i, "I")
+    add_subplot_label(ax_i, "J")
     if df_tmaze_entries is not None:
-        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Entries', 'Genotype', order=geno_order, ymax=100)
-        ax_i.set_title('Total Port Entries', fontsize=8)
-        ax_i.set_ylabel('Total Entries')
-        annotate_from_stats(ax_i, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Entries']))
+        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Arm_Entries', 'Genotype', order=geno_order, ymax=100)
+        ax_i.set_title('Total Arm Entries', fontsize=8)
+        ax_i.set_ylabel('Total Arm Entries')
+        annotate_from_stats(ax_i, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Arm_Entries']))
     
-    # Panel J: Spontaneous Alternation
+    # Panel K: Spontaneous Alternation
     ax_j = fig.add_subplot(gs_row4[3])
-    add_subplot_label(ax_j, "J")
+    add_subplot_label(ax_j, "K")
     if df_tmaze is not None:
         plot_bar_scatter(ax_j, df_tmaze, 'Genotype', 'Percent_Alternations', 'Genotype', order=geno_order)
         ax_j.set_title('Spontaneous Alternation', fontsize=8)
