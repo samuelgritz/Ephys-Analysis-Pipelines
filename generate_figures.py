@@ -284,7 +284,7 @@ def plot_figure_1_behavior():
     ax_i = fig.add_subplot(gs_row4[2])
     add_subplot_label(ax_i, "J")
     if df_tmaze_entries is not None:
-        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Arm_Entries', 'Genotype', order=geno_order, ymax=100)
+        plot_bar_scatter(ax_i, df_tmaze_entries, 'Genotype', 'Total_Arm_Entries', 'Genotype', order=geno_order, ymax=65)
         ax_i.set_title('Total Arm Entries', fontsize=8)
         ax_i.set_ylabel('Total Arm Entries')
         annotate_from_stats(ax_i, df_stats, "Fig 1J", "Total Entries", x1=0, x2=1, y_pos=get_safe_y(df_tmaze_entries['Total_Arm_Entries']))
