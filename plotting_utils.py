@@ -2760,8 +2760,9 @@ def plot_input_resistance_comparison(ax_wt, ax_gnb1, data_dir, master_df, target
         try:
             data_df = pd.read_pickle(file_path)
             
+            # Voltage_Sag traces contain an embedded test pulse at 50–150 ms
             trace = None
-            for stim_type in ['Voltage_sag', 'EPSP_stim', 'IV_stim', 'Coarse_FI', 'Fine_FI']:
+            for stim_type in ['Voltage_Sag', 'Voltage_sag', 'EPSP_stim', 'IV_stim', 'Coarse_FI', 'Fine_FI']:
                 sag_data = data_df[data_df['stim_type'] == stim_type]
                 if not sag_data.empty:
                     trace = sag_data.iloc[0]['sweep']
@@ -2780,8 +2781,8 @@ def plot_input_resistance_comparison(ax_wt, ax_gnb1, data_dir, master_df, target
             label_color = 'black' if genotype == 'WT' else 'red'
             ax.text(0.02, 0.95, genotype, transform=ax.transAxes, fontsize=11, fontweight='bold', va='top', color=label_color)
             
-            # Zoom in on test pulse
-            ax.set_xlim(0, 300)
+            # Zoom in on 100 ms test pulse (step_start=50 ms, step_duration=100 ms)
+            ax.set_xlim(20, 200)
             ax.axis('off')
             
             if genotype in ('GNB1', 'I80T/+'):
