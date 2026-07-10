@@ -2689,7 +2689,10 @@ def plot_isi_example_traces(ax_wt, ax_gnb1, data_dir, master_df, df_ap_ahp, targ
 # FIGURE 2 PANEL UPDATES - Voltage Sag and AHP Area Comparisons
 # ==================================================================================================
 
-def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='03142024_c2', target_gnb1='02132024_c1'):
+#20240709_c1 - 14.4
+#20240814_c2 - 15.38
+
+def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='07092024_c1', target_gnb1='08142024_c2'):
     """Plot WT and GNB1 voltage sag examples side-by-side with analysis annotations on WT."""
     import pandas as pd
     import numpy as np
@@ -2702,7 +2705,7 @@ def plot_voltage_sag_comparison(ax_wt, ax_gnb1, data_dir, master_df, target_wt='
         
         try:
             data_df = pd.read_pickle(file_path)
-            sag_data = data_df[data_df['stim_type'] == 'Voltage_sag']
+            sag_data = data_df[data_df['stim_type'].str.lower() == 'voltage_sag']
             if sag_data.empty:
                 plot_trace_placeholder(ax, "No Voltage_sag experiment found")
                 return
@@ -2786,7 +2789,7 @@ def plot_input_resistance_comparison(ax_wt, ax_gnb1, data_dir, master_df, target
             ax.axis('off')
             
             if genotype in ('GNB1', 'I80T/+'):
-                add_scale_bar(ax, 100, 5, x_pos=0.55, y_pos=0.15)
+                add_scale_bar(ax, 50, 5, x_pos=0.55, y_pos=0.15)
         except Exception as e:
             plot_trace_placeholder(ax, f"Error: {e}")
     
