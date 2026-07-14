@@ -814,7 +814,7 @@ try:
         "I80T_SEM":           "0.000",
         "WT_N":               "0",
         "I80T_N":             "0",
-        "P_Value":            "0.0000E+00",  # 4 sig figs scientific for raw value
+        "P_Value":            "0.0000",      # 4 decimal places, plain decimal
         "P_Value_Formatted":  "@",           # text — display as-is
         "Paper_Formatted":    "@",           # text — display as-is
         "Degrees_of_Freedom": "0.000",
