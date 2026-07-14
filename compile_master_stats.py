@@ -107,7 +107,12 @@ def row(figure, subpanel, metric, pathway, condition,
         wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n,
         test_used, statistic, p_value, significance,
         notes="", degrees_of_freedom=None):
-    def _f(x): return round(float(x), 4) if pd.notna(x) else np.nan
+    def _f(x):
+        try:
+            v = float(x)
+            return float(f"{v:.4g}")
+        except (ValueError, TypeError):
+            return np.nan
     def _i(x): return int(x) if pd.notna(x) else np.nan
     # NOTE: degrees_of_freedom is only populated when explicitly passed from
     # parametric tests (ANOVA NumDF/DenDF, LME post-hoc df).
@@ -694,8 +699,10 @@ COLUMNS = [
 ]
 
 df_master = pd.DataFrame(rows, columns=COLUMNS)
-for c in ["WT_Mean","WT_SEM","I80T_Mean","I80T_SEM"]:
-    df_master[c] = pd.to_numeric(df_master[c], errors="coerce").round(4)
+for c in ["WT_Mean", "WT_SEM", "I80T_Mean", "I80T_SEM"]:
+    df_master[c] = pd.to_numeric(df_master[c], errors="coerce").apply(
+        lambda v: float(f"{v:.4g}") if pd.notna(v) else np.nan
+    )
 
 fig_order = {
     "Figure 1":1,"Figure 2":2,"Figure 3":3,
