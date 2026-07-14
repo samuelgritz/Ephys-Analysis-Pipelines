@@ -105,7 +105,7 @@ def fmt_p(p):
 def fmt_p_display(p):
     """
     Return a human-readable p-value string:
-      - p >= 0.0001 : 4 sig figs in plain decimal form, e.g. '0.0051', '0.5434'
+      - p >= 0.0001 : 4 sig figs in plain decimal form, e.g. '0.005367', '0.5434'
       - p <  0.0001 : exact 4 sig figs + '(p<0.0001)', e.g. '3.042e-07 (p<0.0001)'
     """
     try:
@@ -116,6 +116,59 @@ def fmt_p_display(p):
             return f"{v:.4g} (p<0.0001)"
     except (ValueError, TypeError):
         return str(p)
+
+
+def _jn_p(p):
+    """
+    Format p-value for JNeurosci manuscript text:
+      - p >= 0.001 : exact to 3 decimal places → 'p = 0.005'
+      - p <  0.001 : 'p < 0.001'
+    """
+    try:
+        v = float(p)
+        if v >= 0.001:
+            return f"p = {v:.3f}"
+        else:
+            return "p < 0.001"
+    except (ValueError, TypeError):
+        return f"p = {p}"
+
+
+def fmt_paper_str(test_used, statistic, p_value):
+    """
+    Build a complete JNeurosci manuscript-ready string.
+
+    Examples:
+      Mann-Whitney:  'U = 293, p = 0.005'
+      Wilcoxon:      'W = 5, p = 0.010'
+      ANOVA:         'F(1,19.0) = 4.711, p = 0.043'
+      LME post-hoc:  't(39.3) = 3.791, p < 0.001'
+    """
+    import re
+    if pd.isna(p_value) or pd.isna(statistic):
+        return ""
+
+    stat_s = str(statistic).strip()
+    p_str  = _jn_p(p_value)
+
+    # F(df1,df2)=value  or  t(df)=value
+    m = re.match(r'^([Fft]\(.*?\))=(.+)$', stat_s)
+    if m:
+        prefix, val = m.group(1), m.group(2)
+        return f"{prefix} = {val}, {p_str}"
+
+    # Bare number — determine test prefix from Test_Used
+    test_lower = str(test_used).lower()
+    if 'wilcoxon' in test_lower:
+        prefix = 'W'
+    elif 'mann-whitney' in test_lower or 'mann whitney' in test_lower:
+        prefix = 'U'
+    elif 'ks' in test_lower or 'kolmogorov' in test_lower:
+        prefix = 'D'
+    else:
+        prefix = 'stat'
+
+    return f"{prefix} = {stat_s}, {p_str}"
 
 
 def row(figure, subpanel, metric, pathway, condition,
@@ -150,6 +203,7 @@ def row(figure, subpanel, metric, pathway, condition,
         Degrees_of_Freedom=degrees_of_freedom if degrees_of_freedom is not None else np.nan,
         P_Value=fmt_p(p_value) if pd.notna(p_value) else np.nan,
         P_Value_Formatted=fmt_p_display(p_value) if pd.notna(p_value) else "",
+        Paper_Formatted=fmt_paper_str(test_used, fmt_stat(statistic), p_value),
         Significance=str(significance),
         Notes=str(notes),
     )
@@ -716,7 +770,8 @@ COLUMNS = [
     "Figure","Subpanel","Metric","Pathway","Condition",
     "WT_Mean","WT_SEM","WT_N",
     "I80T_Mean","I80T_SEM","I80T_N",
-    "Test_Used","Statistic","Degrees_of_Freedom","P_Value","P_Value_Formatted","Significance",
+    "Test_Used","Statistic","Degrees_of_Freedom",
+    "P_Value","P_Value_Formatted","Paper_Formatted","Significance",
     "Notes",
 ]
 
@@ -761,6 +816,7 @@ try:
         "I80T_N":             "0",
         "P_Value":            "0.0000E+00",  # 4 sig figs scientific for raw value
         "P_Value_Formatted":  "@",           # text — display as-is
+        "Paper_Formatted":    "@",           # text — display as-is
         "Degrees_of_Freedom": "0.000",
     }
 
