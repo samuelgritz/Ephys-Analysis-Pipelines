@@ -733,6 +733,32 @@ df_master.to_csv(out_csv, index=False)
 print(f"  Saved CSV  → {out_csv}  ({len(df_master)} rows)")
 
 try:
+    from openpyxl.styles import numbers as xl_numbers
+
+    # Number formats applied per column header
+    COL_FORMATS = {
+        "WT_Mean":           "0.000",       # 4 sig figs via 3 decimal places baseline
+        "I80T_Mean":         "0.000",
+        "WT_SEM":            "0.000",       # 3 sig figs — will be overridden per-cell if needed
+        "I80T_SEM":          "0.000",
+        "WT_N":              "0",
+        "I80T_N":            "0",
+        "P_Value":           "0.000E+00",   # 4 sig figs scientific notation
+        "Degrees_of_Freedom":"0.000",       # 4 sig figs for Satterthwaite df
+    }
+
+    def _apply_formats(ws):
+        """Apply number formats to all data rows for recognised columns."""
+        header = {cell.value: cell.column_letter for cell in ws[1]}
+        for col_name, fmt in COL_FORMATS.items():
+            if col_name not in header:
+                continue
+            col_letter = header[col_name]
+            for row_idx in range(2, ws.max_row + 1):
+                cell = ws[f"{col_letter}{row_idx}"]
+                if cell.value is not None:
+                    cell.number_format = fmt
+
     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
         df_master.to_excel(writer, sheet_name="All Figures", index=False)
         for fig_name in df_master["Figure"].unique():
@@ -742,10 +768,15 @@ try:
                          .replace("Figure ","Fig ")
                          .replace("/","_"))[:31]
             sub_df.to_excel(writer, sheet_name=safe_name, index=False)
+
         for sheet in writer.sheets.values():
+            # Auto-fit column widths
             for col_cells in sheet.columns:
                 max_len = max((len(str(c.value or "")) for c in col_cells), default=10)
                 sheet.column_dimensions[col_cells[0].column_letter].width = min(max_len+2, 50)
+            # Apply number formats
+            _apply_formats(sheet)
+
     print(f"  Saved XLSX → {out_xlsx}  ({len(df_master['Figure'].unique())} sheets)")
 except ImportError:
     print("  openpyxl not installed – run: pip install openpyxl")
