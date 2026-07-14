@@ -94,10 +94,9 @@ def fmt_stat(s):
 
 
 def fmt_p(p):
-    """Store p-value as a float rounded to 4 decimal places."""
+    """Store the raw p-value as a float — no rounding."""
     try:
-        v = float(p)
-        return round(v, 4)
+        return float(p)
     except (ValueError, TypeError):
         return p
 
@@ -814,7 +813,7 @@ try:
         "I80T_SEM":           "0.000",
         "WT_N":               "0",
         "I80T_N":             "0",
-        "P_Value":            "0.0000",      # 4 decimal places, plain decimal
+        "P_Value":            "0.000E+00",   # raw value, scientific for full precision
         "P_Value_Formatted":  "@",           # text — display as-is
         "Paper_Formatted":    "@",           # text — display as-is
         "Degrees_of_Freedom": "0.000",
