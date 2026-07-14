@@ -94,13 +94,36 @@ def fmt_stat(s):
 
 
 def fmt_p(p):
-    """Return p-value as a float rounded to 4 significant figures."""
+    """
+    Store p-value as a float per Journal of Neuroscience style:
+      - p >= 0.001 : rounded to 3 decimal places (e.g. 0.005, 0.027)
+      - p <  0.001 : kept at full precision (not rounded further)
+    """
     try:
         v = float(p)
-        # Use 4 sig figs via scientific notation parsing
-        return float(f"{v:.4g}")
+        if v >= 0.001:
+            return round(v, 3)
+        else:
+            return v   # keep full float precision for very small p-values
     except (ValueError, TypeError):
         return p
+
+
+def fmt_p_display(p):
+    """
+    Return a human-readable p-value string per Journal of Neuroscience style:
+      - p >= 0.001 : \"0.005\"       (3 decimal places, plain decimal)
+      - p <  0.001 : \"< 0.001\"     (as per JNeurosci convention for text)
+                     stored with exact value in P_Value column
+    """
+    try:
+        v = float(p)
+        if v >= 0.001:
+            return f"{v:.3f}"
+        else:
+            return "< 0.001"
+    except (ValueError, TypeError):
+        return str(p)
 
 
 def row(figure, subpanel, metric, pathway, condition,
@@ -134,6 +157,7 @@ def row(figure, subpanel, metric, pathway, condition,
         Statistic=fmt_stat(statistic),
         Degrees_of_Freedom=degrees_of_freedom if degrees_of_freedom is not None else np.nan,
         P_Value=fmt_p(p_value) if pd.notna(p_value) else np.nan,
+        P_Value_Formatted=fmt_p_display(p_value) if pd.notna(p_value) else "",
         Significance=str(significance),
         Notes=str(notes),
     )
@@ -700,7 +724,7 @@ COLUMNS = [
     "Figure","Subpanel","Metric","Pathway","Condition",
     "WT_Mean","WT_SEM","WT_N",
     "I80T_Mean","I80T_SEM","I80T_N",
-    "Test_Used","Statistic","Degrees_of_Freedom","P_Value","Significance",
+    "Test_Used","Statistic","Degrees_of_Freedom","P_Value","P_Value_Formatted","Significance",
     "Notes",
 ]
 
@@ -737,14 +761,16 @@ try:
 
     # Number formats applied per column header
     COL_FORMATS = {
-        "WT_Mean":           "0.000",       # 4 sig figs via 3 decimal places baseline
-        "I80T_Mean":         "0.000",
-        "WT_SEM":            "0.000",       # 3 sig figs — will be overridden per-cell if needed
-        "I80T_SEM":          "0.000",
-        "WT_N":              "0",
-        "I80T_N":            "0",
-        "P_Value":           "0.000E+00",   # 4 sig figs scientific notation
-        "Degrees_of_Freedom":"0.000",       # 4 sig figs for Satterthwaite df
+        "WT_Mean":            "0.000",
+        "I80T_Mean":          "0.000",
+        "WT_SEM":             "0.000",
+        "I80T_SEM":           "0.000",
+        "WT_N":               "0",
+        "I80T_N":             "0",
+        # Decimal format: >=0.001 shows 3 decimal places; <0.001 shows 4
+        "P_Value":            "[>=0.001]0.000;0.0000",
+        "P_Value_Formatted":  "@",   # text — display as-is
+        "Degrees_of_Freedom": "0.000",
     }
 
     def _apply_formats(ws):
