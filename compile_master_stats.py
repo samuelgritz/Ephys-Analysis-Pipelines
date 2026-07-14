@@ -107,10 +107,16 @@ def row(figure, subpanel, metric, pathway, condition,
         wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n,
         test_used, statistic, p_value, significance,
         notes="", degrees_of_freedom=None):
-    def _f(x):
+    def _f(x):  # 4 significant figures — for means
         try:
             v = float(x)
             return float(f"{v:.4g}")
+        except (ValueError, TypeError):
+            return np.nan
+    def _s(x):  # 3 significant figures — for SEMs
+        try:
+            v = float(x)
+            return float(f"{v:.3g}")
         except (ValueError, TypeError):
             return np.nan
     def _i(x): return int(x) if pd.notna(x) else np.nan
@@ -120,9 +126,9 @@ def row(figure, subpanel, metric, pathway, condition,
     return dict(
         Figure=figure, Subpanel=subpanel, Metric=metric,
         Pathway=pathway, Condition=condition,
-        WT_Mean=_f(wt_mean), WT_SEM=_f(wt_sem),
+        WT_Mean=_f(wt_mean), WT_SEM=_s(wt_sem),
         WT_N=_i(wt_n),
-        I80T_Mean=_f(i80t_mean), I80T_SEM=_f(i80t_sem),
+        I80T_Mean=_f(i80t_mean), I80T_SEM=_s(i80t_sem),
         I80T_N=_i(i80t_n),
         Test_Used=str(test_used),
         Statistic=fmt_stat(statistic),
@@ -495,7 +501,7 @@ for _, st in df_fdr56.iterrows():
     main_p   = st["Main_Effect_p"]
     inter_p  = st["Interaction_p"]
 
-    fdr_df_val = round(df_val, 1) if pd.notna(df_val) else np.nan
+    fdr_df_val = float(f"{df_val:.4g}") if pd.notna(df_val) else np.nan
     rows.append(row(
         fig_label,
         f"{subp} – {pw} – ISI {isi_val} ms",
@@ -699,9 +705,13 @@ COLUMNS = [
 ]
 
 df_master = pd.DataFrame(rows, columns=COLUMNS)
-for c in ["WT_Mean", "WT_SEM", "I80T_Mean", "I80T_SEM"]:
+for c in ["WT_Mean", "I80T_Mean"]:
     df_master[c] = pd.to_numeric(df_master[c], errors="coerce").apply(
         lambda v: float(f"{v:.4g}") if pd.notna(v) else np.nan
+    )
+for c in ["WT_SEM", "I80T_SEM"]:
+    df_master[c] = pd.to_numeric(df_master[c], errors="coerce").apply(
+        lambda v: float(f"{v:.3g}") if pd.notna(v) else np.nan
     )
 
 fig_order = {
