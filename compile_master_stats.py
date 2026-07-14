@@ -94,34 +94,26 @@ def fmt_stat(s):
 
 
 def fmt_p(p):
-    """
-    Store p-value as a float per Journal of Neuroscience style:
-      - p >= 0.001 : rounded to 3 decimal places (e.g. 0.005, 0.027)
-      - p <  0.001 : kept at full precision (not rounded further)
-    """
+    """Store p-value as a float to 4 significant figures."""
     try:
         v = float(p)
-        if v >= 0.001:
-            return round(v, 3)
-        else:
-            return v   # keep full float precision for very small p-values
+        return float(f"{v:.4g}")
     except (ValueError, TypeError):
         return p
 
 
 def fmt_p_display(p):
     """
-    Return a human-readable p-value string per Journal of Neuroscience style:
-      - p >= 0.001 : \"0.005\"       (3 decimal places, plain decimal)
-      - p <  0.001 : \"< 0.001\"     (as per JNeurosci convention for text)
-                     stored with exact value in P_Value column
+    Return a human-readable p-value string:
+      - p >= 0.0001 : 4 sig figs in plain decimal form, e.g. '0.0051', '0.5434'
+      - p <  0.0001 : exact 4 sig figs + '(p<0.0001)', e.g. '3.042e-07 (p<0.0001)'
     """
     try:
         v = float(p)
-        if v >= 0.001:
-            return f"{v:.3f}"
+        if v >= 0.0001:
+            return f"{v:.4g}"          # plain decimal, 4 sig figs
         else:
-            return "< 0.001"
+            return f"{v:.4g} (p<0.0001)"
     except (ValueError, TypeError):
         return str(p)
 
@@ -767,9 +759,8 @@ try:
         "I80T_SEM":           "0.000",
         "WT_N":               "0",
         "I80T_N":             "0",
-        # Decimal format: >=0.001 shows 3 decimal places; <0.001 shows 4
-        "P_Value":            "[>=0.001]0.000;0.0000",
-        "P_Value_Formatted":  "@",   # text — display as-is
+        "P_Value":            "0.0000E+00",  # 4 sig figs scientific for raw value
+        "P_Value_Formatted":  "@",           # text — display as-is
         "Degrees_of_Freedom": "0.000",
     }
 
