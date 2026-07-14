@@ -50,6 +50,59 @@ def p_to_sig(p):
     else:          return "ns"
 
 
+def _4sig(x):
+    """Return a number formatted to 4 significant figures as a string."""
+    try:
+        v = float(x)
+    except (ValueError, TypeError):
+        return str(x)
+    if v == 0:
+        return "0"
+    # Use 4 significant figures
+    return f"{v:.4g}"
+
+
+def fmt_stat(s):
+    """
+    Normalise a statistic value to 4 significant figures.
+
+    Handles:
+      - Bare numbers:            '1255.5'  → '1256'
+                                 '2.64866' → '2.649'
+      - Compound F strings:      'F(1,19.0)=4.711'  → 'F(1,19.0)=4.711'
+      - Compound t strings:      't(43.4)=3.1258'   → 't(43.4)=3.126'
+      - ANOVA/ISI df strings already formatted (pass-through)
+    """
+    if pd.isna(s) or s is None:
+        return s
+    s = str(s).strip()
+
+    import re
+    # Pattern: F(df1,df2)=value  or  t(df)=value  or  W=value  etc.
+    # Capture everything up to '=' and normalise the numeric part after '='
+    m = re.match(r'^([Fft]\(.*?\)=)(.+)$', s)
+    if m:
+        prefix, num_part = m.group(1), m.group(2)
+        return prefix + _4sig(num_part)
+
+    # Bare number — U-stat, W-stat, F-ratio stored without parens, etc.
+    try:
+        return _4sig(float(s))
+    except ValueError:
+        # Already a formatted string we don't recognise — return as-is
+        return s
+
+
+def fmt_p(p):
+    """Return p-value as a float rounded to 4 significant figures."""
+    try:
+        v = float(p)
+        # Use 4 sig figs via scientific notation parsing
+        return float(f"{v:.4g}")
+    except (ValueError, TypeError):
+        return p
+
+
 def row(figure, subpanel, metric, pathway, condition,
         wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n,
         test_used, statistic, p_value, significance,
@@ -67,9 +120,9 @@ def row(figure, subpanel, metric, pathway, condition,
         I80T_Mean=_f(i80t_mean), I80T_SEM=_f(i80t_sem),
         I80T_N=_i(i80t_n),
         Test_Used=str(test_used),
-        Statistic=statistic,
+        Statistic=fmt_stat(statistic),
         Degrees_of_Freedom=degrees_of_freedom if degrees_of_freedom is not None else np.nan,
-        P_Value=float(p_value) if pd.notna(p_value) else np.nan,
+        P_Value=fmt_p(p_value) if pd.notna(p_value) else np.nan,
         Significance=str(significance),
         Notes=str(notes),
     )
@@ -392,7 +445,7 @@ for _, st in df_anova56.iterrows():
         st.get("Mean_WT",   np.nan), st.get("SEM_WT",   np.nan), np.nan,
         st.get("Mean_GNB1", np.nan), st.get("SEM_GNB1", np.nan), np.nan,
         "LME Type III ANOVA (lmerTest)",
-        f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={round(f_val,3) if pd.notna(f_val) else '?'}",
+        f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={_4sig(f_val) if pd.notna(f_val) else '?'}",
         p_val, sig,
         notes=f"ANOVA term: {effect}",
         degrees_of_freedom=anova_df_str
@@ -450,7 +503,7 @@ for _, st in df_fdr56.iterrows():
         gnb_sub.sem()  if len(gnb_sub) > 1 else np.nan,
         len(gnb_sub)   if len(gnb_sub) else np.nan,
         "LME FDR-corrected post-hoc (R lmerTest)",
-        f"t({round(df_val,1) if pd.notna(df_val) else '?'})={round(t_ratio,3) if pd.notna(t_ratio) else '?'}",
+        f"t({round(df_val,1) if pd.notna(df_val) else '?'})={_4sig(t_ratio) if pd.notna(t_ratio) else '?'}",
         p_fdr, sig_fdr,
         notes=(
             f"FDR post-hoc at ISI {isi_val} ms | "
