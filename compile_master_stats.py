@@ -94,42 +94,42 @@ def fmt_stat(s):
 
 
 def fmt_p(p):
-    """Store p-value as a float to 4 significant figures."""
+    """Store p-value as a float rounded to 4 decimal places."""
     try:
         v = float(p)
-        return float(f"{v:.4g}")
+        return round(v, 4)
     except (ValueError, TypeError):
         return p
 
 
 def fmt_p_display(p):
     """
-    Return a human-readable p-value string:
-      - p >= 0.0001 : 4 sig figs in plain decimal form, e.g. '0.005367', '0.5434'
-      - p <  0.0001 : exact 4 sig figs + '(p<0.0001)', e.g. '3.042e-07 (p<0.0001)'
+    Return a human-readable p-value string — always 4 decimal places:
+      - p >= 0.0001 : '0.0054', '0.5315', '0.0490'
+      - p <  0.0001 : '0.0000 (p<0.0001)'
     """
     try:
         v = float(p)
         if v >= 0.0001:
-            return f"{v:.4g}"          # plain decimal, 4 sig figs
+            return f"{v:.4f}"
         else:
-            return f"{v:.4g} (p<0.0001)"
+            return f"{v:.4f} (p<0.0001)"
     except (ValueError, TypeError):
         return str(p)
 
 
 def _jn_p(p):
     """
-    Format p-value for JNeurosci manuscript text:
-      - p >= 0.001 : exact to 3 decimal places → 'p = 0.005'
-      - p <  0.001 : 'p < 0.001'
+    Format p-value for JNeurosci Paper_Formatted column — always 4 decimal places:
+      - p >= 0.0001 : 'p = 0.0054'
+      - p <  0.0001 : 'p < 0.0001'
     """
     try:
         v = float(p)
-        if v >= 0.001:
-            return f"p = {v:.3f}"
+        if v >= 0.0001:
+            return f"p = {v:.4f}"
         else:
-            return "p < 0.001"
+            return "p < 0.0001"
     except (ValueError, TypeError):
         return f"p = {p}"
 
