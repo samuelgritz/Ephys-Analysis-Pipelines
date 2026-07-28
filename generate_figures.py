@@ -470,7 +470,7 @@ def plot_figure_2_physiology():
 
     if raw_traces_path and master_df is not None:
         target_wt_rheo  = '03142024_c2'
-        target_gnb_rheo = '05092024_c3'
+        target_gnb_rheo = '02262024_c1'
         sweep_idx_wt  = get_sweep_index_from_master(master_df, target_wt_rheo)
         sweep_idx_gnb = get_sweep_index_from_master(master_df, target_gnb_rheo)
 
@@ -508,10 +508,11 @@ def plot_figure_2_physiology():
     ax_c_bar = fig.add_subplot(gs_C[1, :])
     if df_ap_ahp is not None and 'decay_area' in df_ap_ahp.columns:
         plot_bar_scatter(ax_c_bar, df_ap_ahp, 'Genotype', 'decay_area',
-                         'Genotype', order=['WT', 'I80T/+'], ymin=0, ymax=220)
-        ax_c_bar.set_ylabel('AHP Area\n(mV·ms)', fontsize=7)
+                         'Genotype', order=['WT', 'I80T/+'], ymin=0, ymax=8)
+        ax_c_bar.set_ylabel('AHP Area\n(mV·s)', fontsize=7)
         ax_c_bar.set_title('AHP Decay', fontsize=8)
         ax_c_bar.set_box_aspect(1)
+        ax_c_bar.set_ylim(0, 8)
         if df_stats is not None:
             annotate_from_stats(ax_c_bar, df_stats, "Fig 2E", "AHP Decay",
                                 x1=0, x2=1,
@@ -666,7 +667,7 @@ def plot_figure_2_physiology():
     if raw_traces_path and master_df is not None:
         from plotting_utils import plot_isi_example_traces
         plot_isi_example_traces(ax_h_wt, ax_h_gnb, raw_traces_path, master_df, df_ap_ahp,
-                                target_wt='07112024_c1', target_gnb1='07302024_c1')
+                                target_wt='01272026_c3', target_gnb1='07302024_c1')
     else:
         ax_h_wt.text(0.5, 0.5, 'ISI Traces Unavailable', ha='center', color='red')
         ax_h_wt.axis('off')
@@ -1151,7 +1152,7 @@ def plot_figure_4_Unitary_E_I_Breakdown():
                          order=['WT', 'I80T/+'], unique_col='Cell_ID')
         if col == 0:
             add_subplot_label(ax, 'E', fontsize=10, fontweight='bold')
-            ax.set_ylabel('Slow IPSP Area\n(mV·ms)', fontsize=8)
+            ax.set_ylabel('Slow IPSP Area\n(mV·s)', fontsize=8)
         else:
             ax.set_ylabel('')
         ax.set_xlabel('')
@@ -1207,12 +1208,12 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
     """
     Figure 5: E:I balance across frequencies (ISIs)
     
-    Layout: 5 rows
-    - Row 1 (A): WT Mean±SEM traces — 50ms ISI (3 pathways) | 10ms ISI (3 pathways)
-    - Row 2 (B): I80T/+ Mean±SEM traces — 50ms ISI (3 pathways) | 10ms ISI (3 pathways)
-    - Row 3 (C): Excitation Amplitudes (Gabazine) - All ISIs
-    - Row 4 (D): Inh (GABAA) Amplitudes (Estimated) - All ISIs
-    - Row 5 (E): Inh (GABAB) Area - All ISIs
+    Layout: 6 rows
+    - Rows 1-3 (A/B): Example traces — 2 columns (WT | I80T/+) × 3 rows
+                       (ECIII, CA3 Apical, CA3 Basal), ISI=10ms only
+    - Row 4 (C): Excitation Amplitudes (Gabazine) - All ISIs
+    - Row 5 (D): Inh (GABAA) Amplitudes (Estimated) - All ISIs
+    - Row 6 (E): Inh (GABAB) Area - All ISIs
     """
     print("\n--- Generating Figure 5: E:I Balance Redesign ---")
     setup_publication_style()
@@ -1227,15 +1228,15 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
     
     # Convert 17.5 cm to inches
     fig_width = 17.5 / 2.54 
-    fig_height = 11.0  # 5 rows: 2 trace + 3 quantification
+    fig_height = 13.0  # 6 rows: 3 trace + 3 quantification
     
     fig = plt.figure(figsize=(fig_width, fig_height))
     
-    gs = fig.add_gridspec(5, 3,
+    gs = fig.add_gridspec(6, 3,
                          wspace=0.45, hspace=0.9,
                          left=0.08, right=0.98,
-                         top=0.96, bottom=0.06,
-                         height_ratios=[0.7, 0.7, 0.9, 0.9, 0.9])
+                         top=0.96, bottom=0.05,
+                         height_ratios=[0.4, 0.4, 0.4, 0.9, 0.9, 0.9])
     
     # Load Significance Markers
     base_stats_dir = 'paper_data/E_I_data/'
@@ -1261,64 +1262,71 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
     from matplotlib.gridspec import GridSpecFromSubplotSpec
 
     # ==========================================================================
-    # ROW 1 (A): WT single example traces — ECIII Input: 50ms ISI | 10ms ISI
+    # ROWS 1-3 (A/B): Example traces — 2 columns (WT | I80T/+) × 3 rows (pathways)
+    #   Only 100 Hz (ISI=10ms) traces
     # ==========================================================================
-    print("  Row 1 (A): WT example traces (ECIII, 50ms | 10ms ISI)")
-    gs_row_a = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[0, :],
-                                       wspace=0.15, hspace=0)
+    # Best representative cells (near group mean for each pathway at ISI=10)
+    example_cells = {
+        # (pathway_label, genotype): cell_id
+        ('ECIII Input', 'WT'):           '20240530_c1',
+        ('ECIII Input', 'I80T/+'):       '20240905_c1',
+        ('CA3 Apical Input', 'WT'):      '20240530_c1',
+        ('CA3 Apical Input', 'I80T/+'):  '20240404_c3',
+        ('CA3 Basal Input', 'WT'):       '20251015_c1',
+        ('CA3 Basal Input', 'I80T/+'):   '20251014_c3',
+    }
 
-    ax_wt_50 = fig.add_subplot(gs_row_a[0, 0])
-    plot_single_example_ISI(ax_wt_50, df_traces, df_amplitudes, 'WT', 50,
-                            pathway_label='ECIII Input', annotate=True,
-                            target_cell='20240530_c1')
-    add_subplot_label(ax_wt_50, 'A', x=-0.05)
-    ax_wt_50.text(-0.15, 0.5, 'WT', transform=ax_wt_50.transAxes, ha='right',
-                  va='center', fontweight='bold', fontsize=10, rotation=90)
-    ax_wt_50.set_title('ECIII — ISI 50 ms', fontsize=9, fontweight='bold')
+    pathway_rows = [
+        ('ECIII Input', 'ECIII (Perforant)'),
+        ('CA3 Apical Input', 'CA3 Apical (Schaffer)'),
+        ('CA3 Basal Input', 'CA3 Basal'),
+    ]
 
-    ax_wt_10 = fig.add_subplot(gs_row_a[0, 1])
-    plot_single_example_ISI(ax_wt_10, df_traces, df_amplitudes, 'WT', 10,
-                            pathway_label='ECIII Input', annotate=False,
-                            target_cell='20240530_c1')
-    ax_wt_10.set_title('ECIII — ISI 10 ms', fontsize=9, fontweight='bold')
+    print("  Rows 1-3 (A/B): Example traces — ISI 10ms, 3 pathways × 2 genotypes")
+    for row_idx, (pw_label, pw_display) in enumerate(pathway_rows):
+        gs_row = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[row_idx, :],
+                                         wspace=0.15)
 
-    # Add scale bar to 50ms panel
-    add_scale_bar(ax_wt_50, x_scale_ms=50, y_scale_mv=2, x_pos=0.05, y_pos=0.05)
+        for col_idx, genotype in enumerate(['WT', 'I80T/+']):
+            ax = fig.add_subplot(gs_row[0, col_idx])
+            target_cell = example_cells.get((pw_label, genotype))
+
+            # Add annotations only on first trace (top-left)
+            annotate = (row_idx == 0 and col_idx == 0)
+            plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, 10,
+                                    pathway_label=pw_label, annotate=annotate,
+                                    target_cell=target_cell)
+
+            # Column headers on first row
+            if row_idx == 0:
+                header_color = 'red' if genotype == 'I80T/+' else 'black'
+                ax.set_title(genotype, fontsize=10, fontweight='bold',
+                             color=header_color)
+
+            # Panel labels
+            if row_idx == 0 and col_idx == 0:
+                add_subplot_label(ax, 'A', x=-0.05)
+            if row_idx == 0 and col_idx == 1:
+                add_subplot_label(ax, 'B', x=-0.05)
+
+            # Pathway labels on left column
+            if col_idx == 0:
+                ax.text(-0.15, 0.5, pw_display, transform=ax.transAxes,
+                        ha='right', va='center', fontweight='bold', fontsize=8,
+                        rotation=90)
+
+            # Scale bar on bottom-left panel
+            if row_idx == 2 and col_idx == 0:
+                add_scale_bar(ax, x_scale_ms=50, y_scale_mv=2, x_pos=0.05,
+                              y_pos=0.05)
 
     # ==========================================================================
-    # ROW 2 (B): I80T/+ single example traces — ECIII Input: 50ms ISI | 10ms ISI
-    # ==========================================================================
-    print("  Row 2 (B): I80T/+ example traces (ECIII, 50ms | 10ms ISI)")
-    gs_row_b = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1, :],
-                                       wspace=0.15, hspace=0)
-
-    ax_mut_50 = fig.add_subplot(gs_row_b[0, 0])
-    plot_single_example_ISI(ax_mut_50, df_traces, df_amplitudes, 'I80T/+', 50,
-                            pathway_label='ECIII Input', annotate=False,
-                            target_cell='20240905_c1')
-    add_subplot_label(ax_mut_50, 'B', x=-0.05)
-    ax_mut_50.text(-0.15, 0.5, 'I80T/+', transform=ax_mut_50.transAxes, ha='right',
-                   va='center', fontweight='bold', fontsize=10, rotation=90,
-                   color='red')
-
-    ax_mut_10 = fig.add_subplot(gs_row_b[0, 1])
-    plot_single_example_ISI(ax_mut_10, df_traces, df_amplitudes, 'I80T/+', 10,
-                            pathway_label='ECIII Input', annotate=False,
-                            target_cell='20240905_c1')
-    # Legend on right panel of bottom trace row
-    ax_mut_10.legend(frameon=False, fontsize=7, loc='lower right',
-                     bbox_to_anchor=(1.02, -0.08), ncol=1)
-
-    # Add scale bar to I80T/+ 50ms panel
-    add_scale_bar(ax_mut_50, x_scale_ms=50, y_scale_mv=2, x_pos=0.05, y_pos=0.05)
-
-    # ==========================================================================
-    # ROW 3 (C): Excitation Amplitudes — shared Y-axis
+    # ROW 4 (C): Excitation Amplitudes — shared Y-axis
     # ==========================================================================
     ylims_exc = []
     axs_exc = []
     for col, (label, pathway_key, channel) in enumerate(pathways):
-        ax = fig.add_subplot(gs[2, col])
+        ax = fig.add_subplot(gs[3, col])
         axs_exc.append(ax)
         if col == 0:
             add_subplot_label(ax, "C", fontsize=10, fontweight='bold')
@@ -1339,7 +1347,7 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
         ax.set_ylim(0, 25)
 
     # ==========================================================================
-    # ROW 4 (D): Inh (GABAA) Amplitudes (absolute value)
+    # ROW 5 (D): Inh (GABAA) Amplitudes (absolute value)
     # ==========================================================================
     ylims_inh_a = []
     axs_inh_a = []
@@ -1347,7 +1355,7 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
     df_amplitudes_abs_inh = df_amplitudes.copy()
     df_amplitudes_abs_inh['Estimated_Inhibition_Amplitude'] = df_amplitudes_abs_inh['Estimated_Inhibition_Amplitude'].abs()
     for col, (label, pathway_key, channel) in enumerate(pathways):
-        ax = fig.add_subplot(gs[3, col])
+        ax = fig.add_subplot(gs[4, col])
         axs_inh_a.append(ax)
         if col == 0:
             add_subplot_label(ax, "D", fontsize=10, fontweight='bold')
@@ -1363,13 +1371,13 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
         ylims_inh_a.append(ylim)
         if col > 0: ax.set_ylabel('')
         
-    # Sync Y-axis for ALL pathways in Row 4 (Panel D)
+    # Sync Y-axis for ALL pathways in Row 5 (Panel D)
     max_y = max([yl[1] for yl in ylims_inh_a if yl is not None])
     for ax in axs_inh_a:
         ax.set_ylim(0, max_y)
 
     # ==========================================================================
-    # ROW 5 (E): Inh (GABAB) Area (absolute value)
+    # ROW 6 (E): Inh (GABAB) Area (absolute value)
     # ==========================================================================
     ylims_inh_b = []
     axs_inh_b = []
@@ -1377,14 +1385,14 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
     df_amplitudes_abs_gabab = df_amplitudes.copy()
     df_amplitudes_abs_gabab['GABAB_Area'] = df_amplitudes_abs_gabab['GABAB_Area'].abs()
     for col, (label, pathway_key, channel) in enumerate(pathways):
-        ax = fig.add_subplot(gs[4, col])
+        ax = fig.add_subplot(gs[5, col])
         axs_inh_b.append(ax)
         if col == 0:
             add_subplot_label(ax, "E", fontsize=10, fontweight='bold')
         pathway_name = {'perforant': 'Perforant', 'schaffer': 'Schaffer', 
                         'basal': 'Basal_Stratum_Oriens'}[pathway_key]
         ylim = plot_metric_comparison(ax, df_amplitudes_abs_gabab, pathway_name, 
-                                     'GABAB_Area', 'Slow IPSP Area (mV·ms)')
+                                     'GABAB_Area', 'Slow IPSP Area (mV·s)')
         
         # Add Markers
         analysis, comp = panel_to_analysis['E']
@@ -1393,7 +1401,7 @@ def plot_figure_5_EI_frequency_dependence(output_path='paper_figures/Figure_5_EI
         ylims_inh_b.append(ylim)
         if col > 0: ax.set_ylabel('')
         
-    # Sync Y-axis for ALL pathways in Row 5 (Panel E) — fix between 0 and 1
+    # Sync Y-axis for ALL pathways in Row 6 (Panel E) — fix between 0 and 1
     for ax in axs_inh_b:
         ax.set_ylim(0, 1)
         ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])

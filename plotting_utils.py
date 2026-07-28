@@ -2478,7 +2478,7 @@ def export_physiology_summary_table(df_intrinsic, df_ap_ahp, df_stats, output_pa
         {'df': df_ap_ahp, 'column': 'AP_size', 'display': 'Amplitude (mV)', 'stats_key': 'AP Size'},
         {'df': df_ap_ahp, 'column': 'AP_halfwidth', 'display': 'Halfwidth (ms)', 'stats_key': 'AP Halfwidth'},
         {'df': df_ap_ahp, 'column': 'AHP_size', 'display': 'AHP Amplitude (mV)', 'stats_key': 'AHP Amplitude'},
-        {'df': df_ap_ahp, 'column': 'decay_area', 'display': 'AHP Decay area (ms)', 'stats_key': 'AHP Decay'},
+        {'df': df_ap_ahp, 'column': 'decay_area', 'display': 'AHP Decay area (mV·s)', 'stats_key': 'AHP Decay'},
     ]
     
     rows = []
@@ -3327,7 +3327,7 @@ def plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, isi,
     gabazine = gabazine - np.mean(gabazine[:bl])
 
     # --- Trim display ---
-    display_ms = 550 if isi >= 50 else 350
+    display_ms = 550 if isi >= 50 else 200
     display_samples = int(display_ms * 20000 / 1000)
     control  = control [:display_samples]
     gabazine = gabazine[:display_samples]
@@ -5056,7 +5056,7 @@ def plot_supralinear_auc_bars_fig7(fig, gs, auc_total_df, df_stats=None, start_r
         apply_clean_yticks(ax_bar)
         
         if p_idx == 0:
-            ax_bar.set_ylabel('Supralinear AUC\\n(mV·s)', fontsize=8)
+            ax_bar.set_ylabel('Supralinear AUC\n(mV·s)', fontsize=8)
         
         # Add stats annotation
         if df_stats is not None:
@@ -5310,7 +5310,7 @@ def plot_girk_delta_bars(ax, df_delta, drug_name, stats_df=None):
                      # For simplicity, if everything is negative, put at 0 + offset?
                      # Let's use max(ymax, 0) + constant
                      peak = max(ymax, 0) if len(y_vals) > 0 else 0
-                     bracket_y = peak + 2 # Add 2 mV*ms buffer
+                     bracket_y = peak + 2 # Add 2 mV·s buffer
                      
                      draw_significance(ax, wt_x, gnb1_x, p_val, bracket_y)
 
@@ -5326,7 +5326,7 @@ def plot_girk_delta_bars(ax, df_delta, drug_name, stats_df=None):
         x_pos += group_spacing
     ax.set_xticks(bar_xticks)
     ax.set_xticklabels(bar_xlabels, fontsize=7)
-    ax.set_ylabel('Delta Area (mV*ms)', fontsize=8)
+    ax.set_ylabel('Delta Area (mV·s)', fontsize=8)
     ax.set_title(drug_name, fontsize=9, fontweight='bold')
     ax.axhline(0, color='gray', linestyle='--', linewidth=0.5)
 

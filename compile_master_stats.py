@@ -64,13 +64,15 @@ def _4sig(x):
 
 def fmt_stat(s):
     """
-    Normalise a statistic value to 4 significant figures.
+    Normalise a statistic value for display.
 
     Handles:
-      - Bare numbers:            '1255.5'  → '1256'
-                                 '2.64866' → '2.649'
-      - Compound F strings:      'F(1,19.0)=4.711'  → 'F(1,19.0)=4.711'
-      - Compound t strings:      't(43.4)=3.1258'   → 't(43.4)=3.126'
+      - Bare integers/half-integers: '5296.5' → '5296.5'  (exact, no rounding)
+                                     '1221.5'  → '1221.5'  (exact, no rounding)
+                                     '592.0'   → '592'     (strip unnecessary .0)
+      - Small decimals (F/t/chi²):   '2.64866' → '2.649'   (4 sig figs)
+      - Compound F strings:          'F(1,19.0)=4.711' → 'F(1,19.0)=4.711'
+      - Compound t strings:          't(43.4)=3.1258'  → 't(43.4)=3.126'
       - ANOVA/ISI df strings already formatted (pass-through)
     """
     if pd.isna(s) or s is None:
@@ -87,7 +89,19 @@ def fmt_stat(s):
 
     # Bare number — U-stat, W-stat, F-ratio stored without parens, etc.
     try:
-        return _4sig(float(s))
+        v = float(s)
+        # Preserve integers and half-integers exactly (U/W statistics).
+        # Only apply 4-sig-fig rounding to small decimals (F/t/chi² values).
+        frac = v - int(v)
+        if frac == 0.0:
+            # Whole number — strip the .0
+            return str(int(v))
+        elif frac == 0.5:
+            # Half-integer (tied U/W) — preserve exactly
+            return f"{v:.1f}"
+        else:
+            # Decimal statistic (F, t, chi², etc.) — 4 sig figs
+            return _4sig(v)
     except ValueError:
         # Already a formatted string we don't recognise — return as-is
         return s
@@ -138,8 +152,8 @@ def fmt_paper_str(test_used, statistic, p_value):
     Build a complete JNeurosci manuscript-ready string.
 
     Examples:
-      Mann-Whitney:  'U = 293, p = 0.005'
-      Wilcoxon:      'W = 5, p = 0.010'
+      Mann-Whitney:  'U = 293.5, p = 0.005'
+      Wilcoxon:      'W = 5.0, p = 0.010'
       ANOVA:         'F(1,19.0) = 4.711, p = 0.043'
       LME post-hoc:  't(39.3) = 3.791, p < 0.001'
     """
@@ -174,19 +188,20 @@ def row(figure, subpanel, metric, pathway, condition,
         wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n,
         test_used, statistic, p_value, significance,
         notes="", degrees_of_freedom=None):
-    def _f(x):  # 4 significant figures — for means
+    def _f(x):  # full precision — for means
         try:
-            v = float(x)
-            return float(f"{v:.4g}")
+            return float(x)
         except (ValueError, TypeError):
             return np.nan
-    def _s(x):  # 3 significant figures — for SEMs
+    def _s(x):  # full precision — for SEMs
         try:
-            v = float(x)
-            return float(f"{v:.3g}")
+            return float(x)
         except (ValueError, TypeError):
             return np.nan
-    def _i(x): return int(x) if pd.notna(x) else np.nan
+    def _i(x):
+        if isinstance(x, str):
+            return x  # pass through range strings like "12-15"
+        return int(x) if pd.notna(x) else np.nan
     # NOTE: degrees_of_freedom is only populated when explicitly passed from
     # parametric tests (ANOVA NumDF/DenDF, LME post-hoc df).
     # Non-parametric tests (Mann-Whitney U, Wilcoxon, KS) do not produce df.
@@ -342,7 +357,7 @@ phys_map = {
     "AP Size":          ("AP_size",                df_ap,   "C", "AP Amplitude (mV)"),
     "AP Halfwidth":     ("AP_halfwidth",           df_ap,   "C", "AP Halfwidth (ms)"),
     "AHP Amplitude":    ("AHP_size",               df_ap,   "E", "AHP Amplitude (mV)"),
-    "AHP Decay":        ("decay_area",             df_ap,   "E", "AHP Decay Area (mV·ms)"),
+    "AHP Decay":        ("decay_area",             df_ap,   "E", "AHP Decay Area (mV·s)"),
     "Access Resistance": ("Access Resistance (From Whole Cell V-Clamp)", df_phys, "QC", "Access Resistance (MΩ)"),
 }
 for comp_key, (col, df_src, subp, mlabel) in phys_map.items():
@@ -437,7 +452,7 @@ uni   = df_ei[df_ei["ISI"] == 300].copy()
 panel_map4 = {
     "Gabazine_Amplitude":             ("C", "EPSP Amplitude – Gabazine condition (mV)"),
     "Estimated_Inhibition_Amplitude": ("D", "GABAA-mediated Inhibition Amplitude (mV)"),
-    "GABAB_Area":                     ("E", "GABAB-mediated Slow IPSP Area (mV·ms)"),
+    "GABAB_Area":                     ("E", "GABAB-mediated Slow IPSP Area (mV·s)"),
 }
 for _, st in df_s4.iterrows():
     mcol = st["Metric"]
@@ -465,6 +480,36 @@ print("Building Figure 5 & 6 rows …")
 df_anova56 = pd.read_csv("paper_data/E_I_data/Figure_5_6_All_Stats_ANOVA.csv")
 df_fdr56   = pd.read_csv("paper_data/E_I_data/Figure_5_6_All_Stats_FDR_Corrected.csv")
 
+# ── Load N-range lookup from Figure_5_6_Stats_Summary.csv ─────────────────────
+# This CSV has the correct per-ISI cell-count ranges for each pathway/genotype.
+# Columns used:
+#   Figure_5_B_D_Range (per ISI)  → Gabazine_Amplitude, Inhibition_Amplitude
+#   Figure_5_E_GABAB_Range        → GABAB_Area
+#   Figure_6_Supralinearity_Range → Gabazine_Supralinearity
+df_n_summary56 = pd.read_csv("paper_data/E_I_data/Figure_5_6_Stats_Summary.csv")
+
+# Build nested lookup: n_range_lookup[pathway][genotype][metric] → range string
+# Maps analysis metric names → the appropriate N range column
+_N_RANGE_COL = {
+    "Gabazine_Amplitude":             "Figure_5_B_D_Range (per ISI)",
+    "Estimated_Inhibition_Amplitude": "Figure_5_B_D_Range (per ISI)",
+    "Inhibition_Amplitude":           "Figure_5_B_D_Range (per ISI)",
+    "GABAB_Area":                     "Figure_5_E_GABAB_Range",
+    "Gabazine_Supralinearity":        "Figure_6_Supralinearity_Range",
+    "E_I_Imbalance":                  "Figure_5_B_D_Range (per ISI)",
+}
+
+def _get_n_range(pathway, genotype, metric):
+    """Look up the N range string for a given pathway/genotype/metric."""
+    range_col = _N_RANGE_COL.get(metric)
+    if range_col is None:
+        return np.nan
+    mask = (df_n_summary56["Pathway"] == pathway) & (df_n_summary56["Genotype"] == genotype)
+    rows_match = df_n_summary56.loc[mask]
+    if len(rows_match) == 0 or range_col not in rows_match.columns:
+        return np.nan
+    return str(rows_match.iloc[0][range_col])
+
 # Metric → (Figure, Subpanel)
 METRIC_FIG56 = {
     "Gabazine_Amplitude":             ("Figure 5", "B"),
@@ -477,7 +522,7 @@ METRIC_LABEL56 = {
     "Gabazine_Amplitude":             "EPSP Amplitude – Gabazine condition (mV)",
     "Estimated_Inhibition_Amplitude": "GABAA Inhibition Amplitude (mV)",
     "Inhibition_Amplitude":           "GABAA Inhibition Amplitude (mV)",
-    "GABAB_Area":                     "GABAB Slow IPSP Area (mV·ms)",
+    "GABAB_Area":                     "GABAB Slow IPSP Area (mV·s)",
     "Gabazine_Supralinearity":        "Supralinearity (Measured − Expected, mV)",
 }
 RAW_COL56 = {
@@ -516,14 +561,16 @@ for _, st in df_anova56.iterrows():
     sig    = st.get("Significant", p_to_sig(p_val))
 
     anova_df_str = f"{int(num_df)},{round(den_df,1)}" if pd.notna(num_df) and pd.notna(den_df) else np.nan
+    wt_n_range  = _get_n_range(pw, "WT", metric)
+    gnb_n_range = _get_n_range(pw, "GNB1", metric)
     rows.append(row(
         fig_label,
         f"{subp} – {pw} – ANOVA",
         METRIC_LABEL56[metric],
         pw,
         f"All ISIs – {EFFECT_LABEL56[effect]}",
-        st.get("Mean_WT",   np.nan), st.get("SEM_WT",   np.nan), np.nan,
-        st.get("Mean_GNB1", np.nan), st.get("SEM_GNB1", np.nan), np.nan,
+        st.get("Mean_WT",   np.nan), st.get("SEM_WT",   np.nan), wt_n_range,
+        st.get("Mean_GNB1", np.nan), st.get("SEM_GNB1", np.nan), gnb_n_range,
         "LME Type III ANOVA (lmerTest)",
         f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={_4sig(f_val) if pd.notna(f_val) else '?'}",
         p_val, sig,
@@ -570,6 +617,8 @@ for _, st in df_fdr56.iterrows():
     main_p   = st["Main_Effect_p"]
     inter_p  = st["Interaction_p"]
 
+    wt_n_range  = _get_n_range(pw, "WT", metric)
+    gnb_n_range = _get_n_range(pw, "GNB1", metric)
     fdr_df_val = float(f"{df_val:.4g}") if pd.notna(df_val) else np.nan
     rows.append(row(
         fig_label,
@@ -578,10 +627,10 @@ for _, st in df_fdr56.iterrows():
         pw, f"ISI {isi_val} ms",
         wt_sub.mean()  if len(wt_sub)  else np.nan,
         wt_sub.sem()   if len(wt_sub) > 1 else np.nan,
-        len(wt_sub)    if len(wt_sub)  else np.nan,
+        wt_n_range,
         gnb_sub.mean() if len(gnb_sub) else np.nan,
         gnb_sub.sem()  if len(gnb_sub) > 1 else np.nan,
-        len(gnb_sub)   if len(gnb_sub) else np.nan,
+        gnb_n_range,
         "LME FDR-corrected post-hoc (R lmerTest)",
         f"t({round(df_val,1) if pd.notna(df_val) else '?'})={_4sig(t_ratio) if pd.notna(t_ratio) else '?'}",
         p_fdr, sig_fdr,
@@ -707,39 +756,41 @@ print("Building Supplemental Figure 1 rows …")
 df_anova_ei = pd.read_csv("paper_data/E_I_data/Figure_5_6_All_Stats_ANOVA.csv")
 imb = df_anova_ei[df_anova_ei["Analysis"] == "E_I_Imbalance"]
 
+# Per-ISI N ranges (same cells as Figure 5) from Figure_5_6_Stats_Summary.csv
+df_n_summary = pd.read_csv("paper_data/E_I_data/Figure_5_6_Stats_Summary.csv")
+ei_n_ranges = {}
+for pw in df_n_summary["Pathway"].unique():
+    wt_row  = df_n_summary[(df_n_summary["Pathway"]==pw) & (df_n_summary["Genotype"]=="WT")]
+    gnb_row = df_n_summary[(df_n_summary["Pathway"]==pw) & (df_n_summary["Genotype"]=="GNB1")]
+    wt_range  = wt_row["Figure_5_B_D_Range (per ISI)"].values[0]  if len(wt_row)  else "?"
+    gnb_range = gnb_row["Figure_5_B_D_Range (per ISI)"].values[0] if len(gnb_row) else "?"
+    ei_n_ranges[pw] = {"WT": wt_range, "GNB1": gnb_range}
+
 for _, st in imb.iterrows():
     pw  = st["Pathway"]
     eff = st["Effect"]
-    
+
     if eff not in EFFECT_LABEL56: continue
     cond_label = f"All ISIs – {EFFECT_LABEL56[eff]}"
-    
-    sub = df_ei[df_ei["Pathway"] == pw].dropna(
-        subset=["Gabazine_Amplitude","Estimated_Inhibition_Amplitude"]).copy()
-    sub["EI_ratio"] = (sub["Gabazine_Amplitude"] /
-                       (sub["Gabazine_Amplitude"] + sub["Estimated_Inhibition_Amplitude"].abs()))
-    wt_cells  = sub[sub["Genotype"]=="WT"]["Cell_ID"].unique()
-    gnb_cells = sub[sub["Genotype"]=="GNB1"]["Cell_ID"].unique()
-    wt_data   = sub[sub["Genotype"]=="WT"]["EI_ratio"]
-    gnb_data  = sub[sub["Genotype"]=="GNB1"]["EI_ratio"]
-    
+
+    n_note = ei_n_ranges.get(pw, {})
+    n_range_str = f"WT n={n_note.get('WT','?')}, GNB1 n={n_note.get('GNB1','?')} cells per ISI"
+
     f_val  = st["F value"]
     num_df = st["NumDF"]
     den_df = st["DenDF"]
     stat_str = f"F({int(num_df) if pd.notna(num_df) else '?'},{round(den_df,1) if pd.notna(den_df) else '?'})={round(f_val,3) if pd.notna(f_val) else '?'}"
     ei_anova_df_str = f"{int(num_df)},{round(den_df,1)}" if pd.notna(num_df) and pd.notna(den_df) else np.nan
+    wt_n_range  = _get_n_range(pw, "WT", "E_I_Imbalance")
+    gnb_n_range = _get_n_range(pw, "GNB1", "E_I_Imbalance")
     rows.append(row(
         "Supplemental Figure 1", f"E:I Imbalance – {pw}",
         "E:I Imbalance Index (EPSP / (EPSP+|IPSP|))", pw, cond_label,
-        wt_data.mean() if eff=="Genotype" else np.nan, 
-        wt_data.sem() if eff=="Genotype" else np.nan, 
-        len(wt_cells),
-        gnb_data.mean() if eff=="Genotype" else np.nan, 
-        gnb_data.sem() if eff=="Genotype" else np.nan, 
-        len(gnb_cells),
+        np.nan, np.nan, wt_n_range,
+        np.nan, np.nan, gnb_n_range,
         "LME Type III ANOVA (lmerTest)", stat_str,
         st["P_Value"], st["Significant"],
-        notes=f"ANOVA term: {eff}",
+        notes=f"ANOVA term: {eff}; {n_range_str}",
         degrees_of_freedom=ei_anova_df_str
     ))
 
@@ -750,11 +801,41 @@ for _, st in imb.iterrows():
 print("Building Supplemental Figure 3 rows …")
 
 df_supp3 = pd.read_csv("paper_data/Stats_Results_Supplemental_Figure_3.csv")
+df_protein = pd.read_csv("paper_data/GNB1_Protein_Levels_Hippocampus.csv")
+
+# Use pre-computed summary values from the CSV
+# Absolute protein signal (Top panel)
+wt_abs_mean  = df_protein["WT_Average_Signal"].values[0]
+i80t_abs_mean = df_protein["I80T/+_Average_Signal"].values[0]
+# Compute SEM for absolute from raw replicates
+wt_abs_reps  = df_protein[["WT GNB1 Absolute Protein Signal Rep 1",
+                            "WT GNB1 Absolute Protein Signal Rep 2",
+                            "WT GNB1 Absolute Protein Signal Rep 3"]].values.flatten()
+i80t_abs_reps = df_protein[["I80T/+ GNB1 Absolute Protein Signal Rep 1",
+                             "I80T/+ GNB1 Absolute Protein Signal Rep 2",
+                             "I80T/+ GNB1 Absolute Protein Signal Rep 3"]].values.flatten()
+wt_abs_sem   = np.std(wt_abs_reps, ddof=1) / np.sqrt(len(wt_abs_reps))
+i80t_abs_sem = np.std(i80t_abs_reps, ddof=1) / np.sqrt(len(i80t_abs_reps))
+
+# Relative protein levels (Bottom panel) — pre-computed in CSV
+wt_rel_mean   = df_protein["WT_Relative"].values[0]
+wt_rel_sem    = df_protein["WT_Relative_SEM"].values[0]
+i80t_rel_mean = df_protein["I80T/+_Relative"].values[0]
+i80t_rel_sem  = df_protein["I80T/+_Relative_SEM"].values[0]
+
+# Map panel → (wt_mean, wt_sem, wt_n, i80t_mean, i80t_sem, i80t_n)
+_protein_summary = {
+    "Supp Fig 3 (Top)":    (wt_abs_mean, wt_abs_sem, 3, i80t_abs_mean, i80t_abs_sem, 3),
+    "Supp Fig 3 (Bottom)": (wt_rel_mean, wt_rel_sem, 3, i80t_rel_mean, i80t_rel_sem, 3),
+}
+
 for _, st in df_supp3.iterrows():
+    panel = st["Figure_Panel"]
+    wm, ws, wn, im, is_, in_ = _protein_summary.get(panel, (np.nan,)*6)
     rows.append(row(
-        "Supplemental Figure 3", st["Figure_Panel"],
+        "Supplemental Figure 3", panel,
         st["Comparison"], "Hippocampus", "N/A",
-        np.nan,np.nan,np.nan, np.nan,np.nan,np.nan,
+        wm, ws, wn, im, is_, in_,
         st["Test_Used"], st["Statistic"], st["P_Value"], st["Significance"],
         notes="GNB1 protein levels (Western blot)"
     ))
@@ -775,14 +856,8 @@ COLUMNS = [
 ]
 
 df_master = pd.DataFrame(rows, columns=COLUMNS)
-for c in ["WT_Mean", "I80T_Mean"]:
-    df_master[c] = pd.to_numeric(df_master[c], errors="coerce").apply(
-        lambda v: float(f"{v:.4g}") if pd.notna(v) else np.nan
-    )
-for c in ["WT_SEM", "I80T_SEM"]:
-    df_master[c] = pd.to_numeric(df_master[c], errors="coerce").apply(
-        lambda v: float(f"{v:.3g}") if pd.notna(v) else np.nan
-    )
+for c in ["WT_Mean", "I80T_Mean", "WT_SEM", "I80T_SEM"]:
+    df_master[c] = pd.to_numeric(df_master[c], errors="coerce")
 
 fig_order = {
     "Figure 1":1,"Figure 2":2,"Figure 3":3,
@@ -811,9 +886,9 @@ try:
         "I80T_Mean":          "0.000",
         "WT_SEM":             "0.000",
         "I80T_SEM":           "0.000",
-        "WT_N":               "0",
-        "I80T_N":             "0",
-        "P_Value":            "0.000E+00",   # raw value, scientific for full precision
+        "WT_N":               "@",       # text — may contain ranges like "12-15"
+        "I80T_N":             "@",       # text — may contain ranges like "12-15"
+        "P_Value":            "0.0000",      # 4 decimal places, plain decimal
         "P_Value_Formatted":  "@",           # text — display as-is
         "Paper_Formatted":    "@",           # text — display as-is
         "Degrees_of_Freedom": "0.000",

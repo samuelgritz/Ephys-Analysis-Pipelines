@@ -253,11 +253,10 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
             decay_area = np.nan
             
             # Only calculate AHP if 3 or fewer APs (more than 3 APs contaminate AHP measurement)
-            
             if num_aps <= 3:
                 # AHP Analysis (analyzes first AP)
                 # Get Threshold Value
-                AP_threshold_value = -40
+                AP_threshold_value = None
                 if 'AP_threshold' in current_analysis_data_AP:
                     val = current_analysis_data_AP['AP_threshold']
                     if isinstance(val, (list, tuple, np.ndarray)) and len(val) > 0:
@@ -265,65 +264,54 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
                     else:
                         AP_threshold_value = val
                 
-                trace_after_threshold = clipped_trace.copy()
-                
-                try:
-                    peak_idx = np.argmax(trace_after_threshold)
-                    # Simple peak check
-                    if peak_idx > 0:
-                        # Find Trough
-                        min_val_after_peak_idx = np.argmin(trace_after_threshold[peak_idx:])
-                        relative_AHP_trough_idx = peak_idx + min_val_after_peak_idx
-                        
-                        if relative_AHP_trough_idx != peak_idx:
-                            # Metrics
-                            _AHP_vol = trace_after_threshold[relative_AHP_trough_idx]
-                            _AHP_amp = AP_threshold_value - _AHP_vol # Calculated amplitude
-                            
-                            # Valid AHP check: Must have positive amplitude
-                            if not np.isnan(_AHP_amp) and _AHP_amp > 0:
-                                AHP_trough_voltage = _AHP_vol
-                                AHP_trough_amplitude = _AHP_amp
-
-                                time_to_peak_ms = AHP_time_to_peak(peak_idx, relative_AHP_trough_idx, sampling_rate)
-                                duration_to_threshold_ms = calculate_AHP_duration(
-                                    trace_after_threshold, relative_AHP_trough_idx, AP_threshold_value, sampling_rate
-                                )
-                                
-                                # Full AHP Area: from peak through trough to threshold recovery
-                                # Find where trace recovers back to threshold after trough
-                                trace_after_trough = trace_after_threshold[relative_AHP_trough_idx:]
-                                recovery_indices = np.where(trace_after_trough >= AP_threshold_value)[0]
-                                if len(recovery_indices) > 0:
-                                    end_idx = relative_AHP_trough_idx + recovery_indices[0]
-                                else:
-                                    end_idx = len(trace_after_threshold) - 1
-                                
-                                # Area from peak to recovery (full AHP)
-                                ahp_start = peak_idx
-                                ahp_end = end_idx + 1
-                                if ahp_end > len(trace_after_threshold):
-                                    ahp_end = len(trace_after_threshold)
-                                
-                                clipped_area = AP_threshold_value - trace_after_threshold[ahp_start:ahp_end]
-                                # Clip negative values (above threshold) to zero
-                                clipped_area = np.maximum(clipped_area, 0)
-                                norm_area = clipped_area / AHP_trough_amplitude
-                                decay_area = np.trapz(norm_area, dx=dt) * 1000
-
-                except Exception:
+                if AP_threshold_value is None or np.isnan(AP_threshold_value):
+                    # No valid AP threshold — skip this cell's AHP analysis
                     pass
+                else:
+                    trace_after_threshold = clipped_trace.copy()
+                    
+                    try:
+                        peak_idx = np.argmax(trace_after_threshold)
+                        # Simple peak check
+                        if peak_idx > 0:
+                            # Find Trough
+                            min_val_after_peak_idx = np.argmin(trace_after_threshold[peak_idx:])
+                            relative_AHP_trough_idx = peak_idx + min_val_after_peak_idx
+                            
+                            if relative_AHP_trough_idx != peak_idx:
+                                # Metrics
+                                _AHP_vol = trace_after_threshold[relative_AHP_trough_idx]
+                                _AHP_amp = AP_threshold_value - _AHP_vol # Calculated amplitude
+                                
+                                # Valid AHP check: Must have positive amplitude
+                                if not np.isnan(_AHP_amp) and _AHP_amp > 0:
+                                    AHP_trough_voltage = _AHP_vol
+                                    AHP_trough_amplitude = _AHP_amp
+
+                        # Full AHP Area: all area below AP_threshold after the AP peak
+                        # Computed independently of AHP trough validation
+                        # 1. Subtract AP_threshold so threshold = 0
+                        trace_zeroed = clipped_trace.copy() - AP_threshold_value
+                        # 2. Take only post-peak portion
+                        trace_post_peak = trace_zeroed[peak_idx:]
+                        # 3. Keep only negative values (below threshold)
+                        trace_below_zero = np.minimum(trace_post_peak, 0)
+                        # 4. Integrate: dx=dt (seconds) → result in mV·s
+                        decay_area = abs(np.trapz(trace_below_zero, dx=dt))
+
+                    except Exception:
+                        pass
 
             # Store AHP Props (Will be NaNs if multiple APs or Calc failed)
             decay_area_properties[cell_id]['AHP_Trough_Voltage'] = AHP_trough_voltage
             decay_area_properties[cell_id]['AHP_size'] = AHP_trough_amplitude 
-            decay_area_properties[cell_id]['AHP_Time_to_Peak_ms'] = time_to_peak_ms
-            decay_area_properties[cell_id]['AHP_Duration_to_Threshold_ms'] = duration_to_threshold_ms
+            #decay_area_properties[cell_id]['AHP_Time_to_Peak_ms'] = time_to_peak_ms
+            #decay_area_properties[cell_id]['AHP_Duration_to_Threshold_ms'] = duration_to_threshold_ms
             decay_area_properties[cell_id]['decay_area'] = decay_area
 
             # Store Plotting Indices
             decay_area_properties[cell_id]['relative_AHP_trough_idx'] = relative_AHP_trough_idx
-            decay_area_properties[cell_id]['AHP_decay_end_idx'] = end_idx
+            # decay_area_properties[cell_id]['AHP_decay_end_idx'] = end_idx
             decay_area_properties[cell_id]['relative_peak_idx'] = peak_idx
             decay_area_properties[cell_id]['AP_threshold_value'] = AP_threshold_value
 
@@ -4176,7 +4164,7 @@ def analyze_gabab_component(all_traces, color, channel_to_plot='channel_1', titl
                                 gabab_measurements[cell][condition] = {
                                     'Trough Amplitude (mV)': trough_amplitude_abs,
                                     'Trough Time (ms)': trough_time,
-                                    'Integral Below Zero (mV*ms)': integral_below_zero
+                                    'Integral Below Zero (mV*s)': integral_below_zero
                                 }
 
     if not traces_to_plot:
@@ -5352,7 +5340,7 @@ def analyze_gabab_stratum_oriens(E_I_basal_traces, master_df, condition_to_plot=
                 
                 # Calculate integral below zero (GABAb area)
                 negative_trace = np.where(trace < 0, trace, 0)
-                integral_below_zero = -np.trapz(negative_trace, dx=dt * 1000)  # mV·ms
+                integral_below_zero = -np.trapz(negative_trace, dx=dt)  # mV·s
                 
                 gabab_measurements.append({
                     'Cell_ID': cell_id,
@@ -5361,7 +5349,7 @@ def analyze_gabab_stratum_oriens(E_I_basal_traces, master_df, condition_to_plot=
                     'Condition': condition,
                     'Trough_Amplitude_mV': trough_amplitude_abs,
                     'Trough_Time_ms': trough_time,
-                    'Integral_mV_ms': integral_below_zero
+                    'Integral_mV_s': integral_below_zero
                 })
     
     # Convert to DataFrame
