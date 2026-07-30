@@ -3327,7 +3327,7 @@ def plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, isi,
     gabazine = gabazine - np.mean(gabazine[:bl])
 
     # --- Trim display ---
-    display_ms = 550 if isi >= 50 else 200
+    display_ms = 550 if isi >= 50 else 350
     display_samples = int(display_ms * 20000 / 1000)
     control  = control [:display_samples]
     gabazine = gabazine[:display_samples]
@@ -3336,7 +3336,8 @@ def plot_single_example_ISI(ax, df_traces, df_amplitudes, genotype, isi,
     # --- Plot traces ---
     ax.plot(time, gabazine, color='magenta', linewidth=1.0, label='Excitation')
     ax.plot(time, control,  color='black',   linewidth=1.0, label='Inh(GABAA)')
-    ax.axhline(0, color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+    ax.plot([time[0], time[-1]], [0, 0], color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+    ax.set_xlim(time[0], time[-1])
 
     # --- GABAB shading ---
     neg_mask = gabazine < 0
@@ -3581,7 +3582,8 @@ def plot_example_ISI_trace(ax, df_traces, df_amplitudes, isi, pathway_label, ann
     # ----- plot traces -----
     ax.plot(time, gabazine, color='magenta', linewidth=1.0, label='Measured - No Inhibition')
     ax.plot(time, control,  color='black',   linewidth=1.0, label='Measured - With Inhibition')
-    ax.axhline(0, color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+    ax.plot([time[0], time[-1]], [0, 0], color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+    ax.set_xlim(time[0], time[-1])
 
     # ----- GABAB shading: fill BETWEEN gabazine trace and y=0, where gabazine < 0 -----
     # This is the integral of all negative-going area (the slow IPSP)

@@ -149,19 +149,434 @@ def AHP_time_to_peak(peak_idx, relative_AHP_trough_idx, sampling_rate):
     dt_ms = 1000 / sampling_rate
     return (relative_AHP_trough_idx - peak_idx) * dt_ms
 
-def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_properties_to_plot, 
-                                                       AP_trace_end=200, duration_ms=50, 
-                                                       sampling_rate=20000):
+#Original code from 07/28/2026 with AHP area calculation fix, still used for Figure 2
+# def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_properties_to_plot, 
+#                                                        AP_trace_end=200, duration_ms=50, 
+#                                                        sampling_rate=20000):
+    # """
+    # Extracts AP properties. 
+    # NOTE: AP_trace_end default increased to 200ms to ensure capture of full AHP recovery.
+    # """
+    # fine_FI_stim_properties = {}
+    # rheobase_traces = {}
+    # decay_area_properties = {}
+    
+    # dt = 1 / sampling_rate
+    # duration_samples = int(duration_ms / 1000 / dt)
+    
+    # # Create lookup dict: Cell_ID -> Rheobase Sweep
+    # valid_df = master_df.dropna(subset=['Cell_ID', 'Rheobase Sweep'])
+    # master_lookup = dict(zip(
+    #     valid_df['Cell_ID'].astype(str),
+    #     valid_df['Rheobase Sweep'].astype(int)
+    # ))
+    
+    # data_files = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
+    
+    # for data_file in data_files:
+    #     try:
+    #         cell_id = convert_pkl_filename_to_cell_id(data_file)
+    #         if cell_id is None or cell_id not in master_lookup:
+    #             continue
+                
+    #         parsed_sweep = master_lookup[cell_id]
+    #         data_df = pd.read_pickle(os.path.join(data_dir, data_file))
+            
+    #         if parsed_sweep < 0 or parsed_sweep >= len(data_df): continue
+
+    #         # Initialize dicts
+    #         if cell_id not in fine_FI_stim_properties: fine_FI_stim_properties[cell_id] = {}
+    #         if cell_id not in decay_area_properties: decay_area_properties[cell_id] = {}
+
+    #         # Access Analysis Data
+    #         if 'analysis_dict' not in data_df.iloc[parsed_sweep]: continue
+    #         current_analysis_data = data_df.iloc[parsed_sweep]['analysis_dict']
+            
+    #         if 'AP' not in current_analysis_data: continue
+    #         current_analysis_data_AP = current_analysis_data['AP']
+    #         AP_threshold_indices = current_analysis_data_AP.get('AP_threshold_indices')
+            
+    #         # --- Valid Cell Check ---
+    #         if AP_threshold_indices is None or len(AP_threshold_indices) == 0:
+    #             continue 
+
+    #         # --- Check for Multiple APs ---
+    #         # Calculate number of APs for exclusion criteria
+    #         num_aps = len(AP_threshold_indices) if isinstance(AP_threshold_indices, (list, tuple, np.ndarray)) else 1
+    #         has_multiple_aps = num_aps > 1
+
+    #         # Handle AP Threshold Index extraction
+    #         if isinstance(AP_threshold_indices, (list, tuple, np.ndarray)):
+    #             if isinstance(AP_threshold_indices[0], (list, tuple, np.ndarray)):
+    #                 AP_threshold_idx = int(AP_threshold_indices[0][0])
+    #             else:
+    #                 AP_threshold_idx = int(AP_threshold_indices[0])
+    #         else:
+    #             AP_threshold_idx = int(AP_threshold_indices)
+
+    #         # Extract Trace
+    #         current_rheobase_trace = data_df.iloc[parsed_sweep]['sweep']
+    #         trace_end_idx_full = AP_threshold_idx + int(AP_trace_end * sampling_rate / 1000)
+    #         if trace_end_idx_full > len(current_rheobase_trace):
+    #              trace_end_idx_full = len(current_rheobase_trace)
+                 
+    #         clipped_trace = current_rheobase_trace[AP_threshold_idx:trace_end_idx_full]
+            
+    #         if cell_id not in rheobase_traces:
+    #             rheobase_traces[cell_id] = {}
+    #         rheobase_traces[cell_id]['Rheobase_Trace'] = [clipped_trace]
+
+    #         # Extract Rheobase Current
+    #         current_lookup_keys = ['Fine_FI', 'IV_stim', 'Coarse_FI']
+    #         for key in current_lookup_keys:
+    #             if key in current_analysis_data and 'current_amplitudes' in current_analysis_data[key]:
+    #                 current_val = current_analysis_data[key]['current_amplitudes']
+    #                 rheobase_traces[cell_id]['Rheobase_Current'] = current_val
+                    
+    #                 if 'Rheobase_Current' not in fine_FI_stim_properties[cell_id]:
+    #                     fine_FI_stim_properties[cell_id]['Rheobase_Current'] = []
+                    
+    #                 val_to_store = current_val[0] if isinstance(current_val, (list, np.ndarray)) else current_val
+                    
+    #                 # Exclude cells with >3 APs for consistency with AHP analysis
+    #                 if num_aps > 3:
+    #                     val_to_store = np.nan
+                    
+    #                 fine_FI_stim_properties[cell_id]['Rheobase_Current'].append(val_to_store)
+    #                 break
+            
+    #         # --- AHP Analysis ---
+    #         # Initialize with NaNs
+    #         AHP_trough_voltage = np.nan
+    #         AHP_trough_amplitude = np.nan
+    #         time_to_peak_ms = np.nan
+    #         duration_to_threshold_ms = np.nan
+    #         decay_area = np.nan
+            
+    #         # Only calculate AHP if 3 or fewer APs (more than 3 APs contaminate AHP measurement)
+    #         if num_aps <= 3:
+    #             # AHP Analysis (analyzes first AP)
+    #             # Get Threshold Value
+    #             AP_threshold_value = None
+    #             if 'AP_threshold' in current_analysis_data_AP:
+    #                 val = current_analysis_data_AP['AP_threshold']
+    #                 if isinstance(val, (list, tuple, np.ndarray)) and len(val) > 0:
+    #                     AP_threshold_value = val[0][0] if isinstance(val[0], (list, tuple, np.ndarray)) else val[0]
+    #                 else:
+    #                     AP_threshold_value = val
+                
+    #             if AP_threshold_value is None or np.isnan(AP_threshold_value):
+    #                 # No valid AP threshold — skip this cell's AHP analysis
+    #                 pass
+    #             else:
+    #                 trace_after_threshold = clipped_trace.copy()
+                    
+    #                 try:
+    #                     peak_idx = np.argmax(trace_after_threshold)
+    #                     # Simple peak check
+    #                     if peak_idx > 0:
+    #                         # Find Trough
+    #                         min_val_after_peak_idx = np.argmin(trace_after_threshold[peak_idx:])
+    #                         relative_AHP_trough_idx = peak_idx + min_val_after_peak_idx
+                            
+    #                         if relative_AHP_trough_idx != peak_idx:
+    #                             # Metrics
+    #                             _AHP_vol = trace_after_threshold[relative_AHP_trough_idx]
+    #                             _AHP_amp = AP_threshold_value - _AHP_vol # Calculated amplitude
+                                
+    #                             # Valid AHP check: Must have positive amplitude
+    #                             if not np.isnan(_AHP_amp) and _AHP_amp > 0:
+    #                                 AHP_trough_voltage = _AHP_vol
+    #                                 AHP_trough_amplitude = _AHP_amp
+
+    #                     # Full AHP Area: all area below AP_threshold after the AP peak
+    #                     # Computed independently of AHP trough validation
+    #                     # 1. Subtract AP_threshold so threshold = 0
+    #                     trace_zeroed = clipped_trace.copy() - AP_threshold_value
+    #                     # 2. Take only post-peak portion
+    #                     trace_post_peak = trace_zeroed[peak_idx:]
+    #                     # 3. Keep only negative values (below threshold)
+    #                     trace_below_zero = np.minimum(trace_post_peak, 0)
+    #                     # 4. Integrate: dx=dt (seconds) → result in mV·s
+    #                     decay_area = abs(np.trapz(trace_below_zero, dx=dt))
+
+    #                 except Exception:
+    #                     pass
+
+    #         # Store AHP Props (Will be NaNs if multiple APs or Calc failed)
+    #         decay_area_properties[cell_id]['AHP_Trough_Voltage'] = AHP_trough_voltage
+    #         decay_area_properties[cell_id]['AHP_size'] = AHP_trough_amplitude 
+    #         #decay_area_properties[cell_id]['AHP_Time_to_Peak_ms'] = time_to_peak_ms
+    #         #decay_area_properties[cell_id]['AHP_Duration_to_Threshold_ms'] = duration_to_threshold_ms
+    #         decay_area_properties[cell_id]['decay_area'] = decay_area
+
+    #         # Store Plotting Indices
+    #         decay_area_properties[cell_id]['relative_AHP_trough_idx'] = relative_AHP_trough_idx
+    #         # decay_area_properties[cell_id]['AHP_decay_end_idx'] = end_idx
+    #         decay_area_properties[cell_id]['relative_peak_idx'] = peak_idx
+    #         decay_area_properties[cell_id]['AP_threshold_value'] = AP_threshold_value
+
+    #         # --- Extract Requested AP Keys from Pickle ---
+    #         for key in AP_properties_to_plot:
+    #             # If key is already calculated in AHP section (e.g. decay_area), skip lookup
+    #             if key in decay_area_properties[cell_id]:
+    #                 continue
+                
+    #             if key not in fine_FI_stim_properties[cell_id]:
+    #                 fine_FI_stim_properties[cell_id][key] = []
+
+    #             if key in current_analysis_data_AP:
+    #                 value = current_analysis_data_AP[key]
+    #                 if isinstance(value, (list, tuple, np.ndarray)) and len(value) > 0:
+    #                     val_to_store = value[0][0] if isinstance(value[0], (list, tuple, np.ndarray)) else value[0]
+    #                 else:
+    #                     val_to_store = value
+    #                 fine_FI_stim_properties[cell_id][key].append(val_to_store)
+        
+    #     except Exception as e:
+    #         print(f"Skipping {data_file}: {e}")
+    #         continue
+
+    # return fine_FI_stim_properties, decay_area_properties, rheobase_traces
+
+# #Original code from 07/28/2026 without AHP area calculation fix
+# def get_AP_and_AHP_rheobase_properties_data_and_traces_copy(master_df, data_dir, 
+#                                                              AP_trace_end=200, duration_ms=50, 
+#                                                              sampling_rate=20000,
+#                                                              plot=False, save_dir=None):
+#     """
+#     Copy of original AHP analysis returning three focused metrics:
+#       - decay_tau: peak-normalized area from peak to threshold recovery (ms)
+#       - AHP_amplitude: threshold - trough voltage (mV)  
+#       - rise_time_to_trough_ms: time from AP peak to AHP trough (ms)
+    
+#     Uses the original analysis logic: global argmax for peak, global argmin for trough,
+#     area bounded by recovery to threshold after trough, normalized by AHP amplitude.
+    
+#     Args:
+#         plot: If True, generates bar plots for each metric (WT vs GNB1)
+#         save_dir: Directory to save plots. If None, uses 'paper_figures/'
+    
+#     Returns:
+#         ahp_metrics: dict {cell_id: {'decay_tau', 'AHP_amplitude', 'rise_time_to_trough_ms'}}
+#         rheobase_traces: dict {cell_id: {'Rheobase_Trace': [trace], ...}}
+#     """
+#     from plotting_utils import COLORS
+    
+#     ahp_metrics = {}
+#     rheobase_traces = {}
+    
+#     dt = 1 / sampling_rate
+#     duration_samples = int(duration_ms / 1000 / dt)
+    
+#     # Create lookup dict: Cell_ID -> Rheobase Sweep
+#     valid_df = master_df.dropna(subset=['Cell_ID', 'Rheobase Sweep'])
+#     master_lookup = dict(zip(
+#         valid_df['Cell_ID'].astype(str),
+#         valid_df['Rheobase Sweep'].astype(int)
+#     ))
+    
+#     # Build genotype lookup
+#     geno_lookup = dict(zip(master_df['Cell_ID'].astype(str), master_df['Genotype']))
+    
+#     data_files = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
+    
+#     for data_file in data_files:
+#         try:
+#             cell_id = convert_pkl_filename_to_cell_id(data_file)
+#             if cell_id is None or cell_id not in master_lookup:
+#                 continue
+                
+#             parsed_sweep = master_lookup[cell_id]
+#             data_df = pd.read_pickle(os.path.join(data_dir, data_file))
+            
+#             if parsed_sweep < 0 or parsed_sweep >= len(data_df): continue
+
+#             # Access Analysis Data
+#             if 'analysis_dict' not in data_df.iloc[parsed_sweep]: continue
+#             current_analysis_data = data_df.iloc[parsed_sweep]['analysis_dict']
+            
+#             if 'AP' not in current_analysis_data: continue
+#             current_analysis_data_AP = current_analysis_data['AP']
+#             AP_threshold_indices = current_analysis_data_AP.get('AP_threshold_indices')
+            
+#             if AP_threshold_indices is None or len(AP_threshold_indices) == 0:
+#                 continue 
+
+#             num_aps = len(AP_threshold_indices) if isinstance(AP_threshold_indices, (list, tuple, np.ndarray)) else 1
+
+#             # Skip cells with >3 APs
+#             if num_aps > 3:
+#                 continue
+
+#             # Handle AP Threshold Index extraction
+#             if isinstance(AP_threshold_indices, (list, tuple, np.ndarray)):
+#                 if isinstance(AP_threshold_indices[0], (list, tuple, np.ndarray)):
+#                     AP_threshold_idx = int(AP_threshold_indices[0][0])
+#                 else:
+#                     AP_threshold_idx = int(AP_threshold_indices[0])
+#             else:
+#                 AP_threshold_idx = int(AP_threshold_indices)
+
+#             # Extract Trace
+#             current_rheobase_trace = data_df.iloc[parsed_sweep]['sweep']
+#             trace_end_idx_full = AP_threshold_idx + int(AP_trace_end * sampling_rate / 1000)
+#             if trace_end_idx_full > len(current_rheobase_trace):
+#                  trace_end_idx_full = len(current_rheobase_trace)
+                 
+#             clipped_trace = current_rheobase_trace[AP_threshold_idx:trace_end_idx_full]
+            
+#             # Get Threshold Value
+#             AP_threshold_value = -40
+#             if 'AP_threshold' in current_analysis_data_AP:
+#                 val = current_analysis_data_AP['AP_threshold']
+#                 if isinstance(val, (list, tuple, np.ndarray)) and len(val) > 0:
+#                     AP_threshold_value = val[0][0] if isinstance(val[0], (list, tuple, np.ndarray)) else val[0]
+#                 else:
+#                     AP_threshold_value = val
+            
+#             trace_after_threshold = clipped_trace.copy()
+            
+#             try:
+#                 peak_idx = np.argmax(trace_after_threshold)
+#                 if peak_idx > 0:
+#                     # Find Trough
+#                     min_val_after_peak_idx = np.argmin(trace_after_threshold[peak_idx:])
+#                     relative_AHP_trough_idx = peak_idx + min_val_after_peak_idx
+                    
+#                     if relative_AHP_trough_idx != peak_idx:
+#                         _AHP_vol = trace_after_threshold[relative_AHP_trough_idx]
+#                         _AHP_amp = AP_threshold_value - _AHP_vol
+                        
+#                         if not np.isnan(_AHP_amp) and _AHP_amp > 0:
+#                             # 1) AHP Amplitude
+#                             ahp_amplitude = _AHP_amp
+                            
+#                             # 2) Rise time to trough (peak -> trough)
+#                             rise_time = AHP_time_to_peak(peak_idx, relative_AHP_trough_idx, sampling_rate)
+                            
+#                             # 3) Decay tau: peak-normalized area from peak to recovery
+#                             trace_after_trough = trace_after_threshold[relative_AHP_trough_idx:]
+#                             recovery_indices = np.where(trace_after_trough >= AP_threshold_value)[0]
+#                             if len(recovery_indices) > 0:
+#                                 end_idx = relative_AHP_trough_idx + recovery_indices[0]
+#                             else:
+#                                 end_idx = len(trace_after_threshold) - 1
+                            
+#                             ahp_start = peak_idx
+#                             ahp_end = end_idx + 1
+#                             if ahp_end > len(trace_after_threshold):
+#                                 ahp_end = len(trace_after_threshold)
+                            
+#                             clipped_area = AP_threshold_value - trace_after_threshold[ahp_start:ahp_end]
+#                             clipped_area = np.maximum(clipped_area, 0)
+#                             norm_area = clipped_area / ahp_amplitude
+#                             decay_tau = np.trapz(norm_area, dx=dt) * 1000  # ms
+                            
+#                             ahp_metrics[cell_id] = {
+#                                 'decay_tau': decay_tau,
+#                                 'AHP_amplitude': ahp_amplitude,
+#                                 'rise_time_to_trough_ms': rise_time
+#                             }
+                            
+#                             rheobase_traces[cell_id] = {
+#                                 'Rheobase_Trace': [clipped_trace],
+#                                 'AP_threshold_value': AP_threshold_value,
+#                                 'peak_idx': peak_idx,
+#                                 'trough_idx': relative_AHP_trough_idx,
+#                                 'end_idx': end_idx
+#                             }
+#             except Exception:
+#                 pass
+        
+#         except Exception as e:
+#             continue
+    
+#     # --- Plotting ---
+#     if plot:
+#         import matplotlib.pyplot as plt
+        
+#         if save_dir is None:
+#             save_dir = 'paper_figures'
+#         os.makedirs(save_dir, exist_ok=True)
+        
+#         # Build DataFrame for plot_bar_scatter style
+#         rows = []
+#         for cid, m in ahp_metrics.items():
+#             geno = geno_lookup.get(cid, 'Unknown')
+#             # Map 'GNB1' to 'GNB1' to match COLORS dict
+#             rows.append({
+#                 'Cell_ID': cid,
+#                 'Genotype': geno,
+#                 'decay_tau': m['decay_tau'],
+#                 'AHP_amplitude': m['AHP_amplitude'],
+#                 'rise_time_to_trough_ms': m['rise_time_to_trough_ms']
+#             })
+#         df = pd.DataFrame(rows)
+        
+#         metrics = [
+#             ('decay_tau', 'Decay Tau (ms)'),
+#             ('AHP_amplitude', 'AHP Amplitude (mV)'),
+#             ('rise_time_to_trough_ms', 'Rise Time to Trough (ms)')
+#         ]
+#         order = ['WT', 'GNB1']
+        
+#         fig, axes = plt.subplots(1, 3, figsize=(10, 4))
+        
+#         for i, (col, ylabel) in enumerate(metrics):
+#             ax = axes[i]
+#             for j, group in enumerate(order):
+#                 subset = df[df['Genotype'] == group]
+#                 values = subset[col].dropna().values
+#                 if len(values) == 0: continue
+                
+#                 color = COLORS.get(group, 'gray')
+#                 mean = np.mean(values)
+#                 sem = np.std(values, ddof=1) / np.sqrt(len(values))
+                
+#                 ax.bar(j, mean, width=0.6, color=color, alpha=0.5, edgecolor='none')
+#                 ax.errorbar(j, mean, yerr=sem, fmt='o', color=color, capsize=1, 
+#                            elinewidth=1, markersize=2)
+#                 fixed_x = np.full(len(values), j)
+#                 ax.scatter(fixed_x, values, color=color, s=2, zorder=3)
+            
+#             n_wt = len(df[df['Genotype'] == 'WT'][col].dropna())
+#             n_gnb = len(df[df['Genotype'] == 'GNB1'][col].dropna())
+#             ax.set_xticks([0, 1])
+#             ax.set_xticklabels([f'WT\n(n={n_wt})', f'I80T/+\n(n={n_gnb})'])
+#             ax.set_ylabel(ylabel)
+#             ax.grid(False)
+#             # Remove top and right spines
+#             ax.spines['top'].set_visible(False)
+#             ax.spines['right'].set_visible(False)
+        
+#         plt.tight_layout()
+#         save_path = os.path.join(save_dir, 'AHP_Three_Metrics_BarPlots.png')
+#         plt.savefig(save_path, dpi=200, bbox_inches='tight')
+#         print(f"Saved: {save_path}")
+#         plt.show()
+    
+#     return ahp_metrics, rheobase_traces
+
+#Most updated iteration with fixed 07/30/2026
+def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_properties_to_plot=None, 
+                                                               AP_trace_end=200, duration_ms=50, 
+                                                               sampling_rate=20000,
+                                                               plot=False, save_dir=None):
     """
-    Extracts AP properties. 
-    NOTE: AP_trace_end default increased to 200ms to ensure capture of full AHP recovery.
+    Direct copy of get_AP_and_AHP_rheobase_properties_data_and_traces with 
+    AHP_Time_to_Peak_ms stored and optional 3-metric bar plotting.
     """
+    if AP_properties_to_plot is None:
+        AP_properties_to_plot = ['AP_threshold', 'AP_halfwidth', 'AP_size', 'AHP_size', 
+                                 'decay_area', 'Rheobase_Current']
+
     fine_FI_stim_properties = {}
     rheobase_traces = {}
     decay_area_properties = {}
     
     dt = 1 / sampling_rate
-    duration_samples = int(duration_ms / 1000 / dt)
+    dt_ms = 1000 / sampling_rate
     
     # Create lookup dict: Cell_ID -> Rheobase Sweep
     valid_df = master_df.dropna(subset=['Cell_ID', 'Rheobase Sweep'])
@@ -170,6 +585,7 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
         valid_df['Rheobase Sweep'].astype(int)
     ))
     
+    geno_lookup = dict(zip(master_df['Cell_ID'].astype(str), master_df['Genotype']))
     data_files = [f for f in os.listdir(data_dir) if f.endswith('.pkl')]
     
     for data_file in data_files:
@@ -200,30 +616,36 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
                 continue 
 
             # --- Check for Multiple APs ---
-            # Calculate number of APs for exclusion criteria
-            num_aps = len(AP_threshold_indices) if isinstance(AP_threshold_indices, (list, tuple, np.ndarray)) else 1
-            has_multiple_aps = num_aps > 1
-
-            # Handle AP Threshold Index extraction
             if isinstance(AP_threshold_indices, (list, tuple, np.ndarray)):
-                if isinstance(AP_threshold_indices[0], (list, tuple, np.ndarray)):
-                    AP_threshold_idx = int(AP_threshold_indices[0][0])
-                else:
-                    AP_threshold_idx = int(AP_threshold_indices[0])
+                raw_indices = [int(x[0]) if isinstance(x, (list, tuple, np.ndarray)) else int(x) for x in AP_threshold_indices]
             else:
-                AP_threshold_idx = int(AP_threshold_indices)
+                raw_indices = [int(AP_threshold_indices)]
 
-            # Extract Trace
+            num_aps = len(raw_indices)
+            AP_threshold_idx = raw_indices[0]
+
+            # Extract Trace (200ms)
             current_rheobase_trace = data_df.iloc[parsed_sweep]['sweep']
             trace_end_idx_full = AP_threshold_idx + int(AP_trace_end * sampling_rate / 1000)
             if trace_end_idx_full > len(current_rheobase_trace):
                  trace_end_idx_full = len(current_rheobase_trace)
                  
             clipped_trace = current_rheobase_trace[AP_threshold_idx:trace_end_idx_full]
+
+            # Determine 1st AP search window (ends before 2nd AP if it exists within clipped_trace)
+            if num_aps > 1:
+                second_ap_rel_idx = raw_indices[1] - AP_threshold_idx
+                if 0 < second_ap_rel_idx < len(clipped_trace):
+                    max_ap1_idx = second_ap_rel_idx
+                else:
+                    max_ap1_idx = len(clipped_trace)
+            else:
+                max_ap1_idx = len(clipped_trace)
             
             if cell_id not in rheobase_traces:
                 rheobase_traces[cell_id] = {}
             rheobase_traces[cell_id]['Rheobase_Trace'] = [clipped_trace]
+            rheobase_traces[cell_id]['max_ap1_idx'] = max_ap1_idx
 
             # Extract Rheobase Current
             current_lookup_keys = ['Fine_FI', 'IV_stim', 'Coarse_FI']
@@ -249,13 +671,15 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
             AHP_trough_voltage = np.nan
             AHP_trough_amplitude = np.nan
             time_to_peak_ms = np.nan
-            duration_to_threshold_ms = np.nan
             decay_area = np.nan
-            
-            # Only calculate AHP if 3 or fewer APs (more than 3 APs contaminate AHP measurement)
+            decay_tau = np.nan
+            relative_AHP_trough_idx = np.nan
+            peak_idx = np.nan
+            AP_threshold_value = np.nan
+            ahp_end_idx = np.nan
+
+            # Only calculate AHP if 3 or fewer APs
             if num_aps <= 3:
-                # AHP Analysis (analyzes first AP)
-                # Get Threshold Value
                 AP_threshold_value = None
                 if 'AP_threshold' in current_analysis_data_AP:
                     val = current_analysis_data_AP['AP_threshold']
@@ -264,60 +688,75 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
                     else:
                         AP_threshold_value = val
                 
-                if AP_threshold_value is None or np.isnan(AP_threshold_value):
-                    # No valid AP threshold — skip this cell's AHP analysis
-                    pass
-                else:
-                    trace_after_threshold = clipped_trace.copy()
-                    
+                if AP_threshold_value is not None and not np.isnan(AP_threshold_value):
                     try:
-                        peak_idx = np.argmax(trace_after_threshold)
-                        # Simple peak check
-                        if peak_idx > 0:
-                            # Find Trough
-                            min_val_after_peak_idx = np.argmin(trace_after_threshold[peak_idx:])
-                            relative_AHP_trough_idx = peak_idx + min_val_after_peak_idx
-                            
-                            if relative_AHP_trough_idx != peak_idx:
-                                # Metrics
-                                _AHP_vol = trace_after_threshold[relative_AHP_trough_idx]
-                                _AHP_amp = AP_threshold_value - _AHP_vol # Calculated amplitude
-                                
-                                # Valid AHP check: Must have positive amplitude
-                                if not np.isnan(_AHP_amp) and _AHP_amp > 0:
-                                    AHP_trough_voltage = _AHP_vol
-                                    AHP_trough_amplitude = _AHP_amp
+                        # 1. 1st AP Peak: peak within 1st AP window
+                        peak_idx = np.argmax(clipped_trace[:max_ap1_idx])
 
-                        # Full AHP Area: all area below AP_threshold after the AP peak
-                        # Computed independently of AHP trough validation
-                        # 1. Subtract AP_threshold so threshold = 0
-                        trace_zeroed = clipped_trace.copy() - AP_threshold_value
-                        # 2. Take only post-peak portion
-                        trace_post_peak = trace_zeroed[peak_idx:]
-                        # 3. Keep only negative values (below threshold)
-                        trace_below_zero = np.minimum(trace_post_peak, 0)
-                        # 4. Integrate: dx=dt (seconds) → result in mV·s
+                        # 2. Threshold-zeroed trace for 1st AP window
+                        # Subtracting AP_threshold_value shifts the trace so threshold = 0.
+                        # All area below 0 on this zeroed trace = area below threshold on raw trace.
+                        trace_zeroed = clipped_trace[:max_ap1_idx] - AP_threshold_value
+
+                        # Store full 200ms threshold-zeroed trace for sanity check display.
+                        # Shading in the notebook is bounded by ahp_end_idx, so the full
+                        # trace is shown but only the correct integration window is shaded.
+                        rheobase_traces[cell_id]['Rheobase_Trace_Zeroed'] = [clipped_trace - AP_threshold_value]
+
+                        # 3. Find recovery index (zero crossing back to threshold after peak, before 2nd AP)
+                        neg_after_peak = np.where(trace_zeroed[peak_idx:] < 0)[0]
+                        if len(neg_after_peak) > 0:
+                            first_neg = neg_after_peak[0]
+                            recovery = np.where(trace_zeroed[peak_idx + first_neg:] >= 0)[0]
+                            if len(recovery) > 0:
+                                ahp_end_idx = peak_idx + first_neg + recovery[0]
+                            else:
+                                ahp_end_idx = max_ap1_idx
+                        else:
+                            ahp_end_idx = max_ap1_idx
+
+                        # 4. Trough search: within AHP region, capped at 50ms (1000 samples) post-peak
+                        trough_search_end = min(ahp_end_idx, peak_idx + int(50 * sampling_rate / 1000))
+                        if trough_search_end > peak_idx:
+                            min_rel = np.argmin(clipped_trace[peak_idx:trough_search_end])
+                            relative_AHP_trough_idx = peak_idx + min_rel
+                            _vol = clipped_trace[relative_AHP_trough_idx]
+                            _amp = AP_threshold_value - _vol
+                            if not np.isnan(_amp) and _amp > 0:
+                                AHP_trough_voltage = _vol
+                                AHP_trough_amplitude = _amp
+                                time_to_peak_ms = (relative_AHP_trough_idx - peak_idx) * dt_ms
+
+                                # 5. Peak-normalized decay tau (ms)
+                                if ahp_end_idx > peak_idx:
+                                    clipped_region = AP_threshold_value - clipped_trace[peak_idx:ahp_end_idx]
+                                    clipped_region = np.maximum(clipped_region, 0)
+                                    norm_area = clipped_region / _amp
+                                    decay_tau = np.trapz(norm_area, dx=dt) * 1000
+
+                        # 6. Raw AHP Area (mV·s)
+                        trace_region = trace_zeroed[peak_idx:ahp_end_idx]
+                        trace_below_zero = np.minimum(trace_region, 0)
                         decay_area = abs(np.trapz(trace_below_zero, dx=dt))
 
                     except Exception:
                         pass
 
-            # Store AHP Props (Will be NaNs if multiple APs or Calc failed)
+            # Store AHP Props
             decay_area_properties[cell_id]['AHP_Trough_Voltage'] = AHP_trough_voltage
             decay_area_properties[cell_id]['AHP_size'] = AHP_trough_amplitude 
-            #decay_area_properties[cell_id]['AHP_Time_to_Peak_ms'] = time_to_peak_ms
-            #decay_area_properties[cell_id]['AHP_Duration_to_Threshold_ms'] = duration_to_threshold_ms
+            decay_area_properties[cell_id]['AHP_Time_to_Peak_ms'] = time_to_peak_ms
             decay_area_properties[cell_id]['decay_area'] = decay_area
+            decay_area_properties[cell_id]['decay_tau'] = decay_tau
 
             # Store Plotting Indices
             decay_area_properties[cell_id]['relative_AHP_trough_idx'] = relative_AHP_trough_idx
-            # decay_area_properties[cell_id]['AHP_decay_end_idx'] = end_idx
+            decay_area_properties[cell_id]['ahp_end_idx'] = ahp_end_idx
             decay_area_properties[cell_id]['relative_peak_idx'] = peak_idx
             decay_area_properties[cell_id]['AP_threshold_value'] = AP_threshold_value
 
             # --- Extract Requested AP Keys from Pickle ---
             for key in AP_properties_to_plot:
-                # If key is already calculated in AHP section (e.g. decay_area), skip lookup
                 if key in decay_area_properties[cell_id]:
                     continue
                 
@@ -336,7 +775,75 @@ def get_AP_and_AHP_rheobase_properties_data_and_traces(master_df, data_dir, AP_p
             print(f"Skipping {data_file}: {e}")
             continue
 
+    if plot:
+        import matplotlib.pyplot as plt
+        from plotting_utils import COLORS
+        if save_dir is None:
+            save_dir = 'paper_figures'
+        os.makedirs(save_dir, exist_ok=True)
+
+        rows = []
+        for cid, props in decay_area_properties.items():
+            geno = geno_lookup.get(cid, 'Unknown')
+            if geno in ['WT', 'GNB1']:
+                rows.append({
+                    'Cell_ID': cid,
+                    'Genotype': geno,
+                    'decay_tau': props.get('decay_tau', np.nan),
+                    'decay_area': props.get('decay_area', np.nan),
+                    'AHP_size': props.get('AHP_size', np.nan),
+                    'AHP_Time_to_Peak_ms': props.get('AHP_Time_to_Peak_ms', np.nan)
+                })
+        df = pd.DataFrame(rows)
+        
+        metrics = [
+            ('decay_tau', 'Decay Tau (ms)'),
+            ('decay_area', 'AHP Area (mV·s)'),
+            ('AHP_size', 'AHP Amplitude (mV)'),
+            ('AHP_Time_to_Peak_ms', 'Rise Time to Trough (ms)')
+        ]
+        order = ['WT', 'GNB1']
+        
+        fig, axes = plt.subplots(1, 4, figsize=(13, 4))
+        
+        for i, (col, ylabel) in enumerate(metrics):
+            ax = axes[i]
+            for j, group in enumerate(order):
+                subset = df[df['Genotype'] == group]
+                values = subset[col].dropna().values
+                if len(values) == 0: continue
+                
+                color = COLORS.get(group, 'gray')
+                mean = np.mean(values)
+                sem = np.std(values, ddof=1) / np.sqrt(len(values))
+                
+                ax.bar(j, mean, width=0.6, color=color, alpha=0.5, edgecolor='none')
+                ax.errorbar(j, mean, yerr=sem, fmt='o', color=color, capsize=1, 
+                           elinewidth=1, markersize=2)
+                fixed_x = np.full(len(values), j)
+                ax.scatter(fixed_x, values, color=color, s=2, zorder=3)
+            
+            n_wt = len(df[df['Genotype'] == 'WT'][col].dropna())
+            n_gnb = len(df[df['Genotype'] == 'GNB1'][col].dropna())
+            ax.set_xticks([0, 1])
+            ax.set_xticklabels([f'WT\n(n={n_wt})', f'I80T/+\n(n={n_gnb})'])
+            ax.set_ylabel(ylabel)
+            if col == 'decay_tau':
+                ax.set_title('Decay Tau')
+            elif col == 'decay_area':
+                ax.set_title('AHP Area')
+            ax.grid(False)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+        
+        plt.tight_layout()
+        save_path = os.path.join(save_dir, 'AHP_Three_Metrics_BarPlots_copy_2.png')
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved: {save_path}")
+        plt.show()
+
     return fine_FI_stim_properties, decay_area_properties, rheobase_traces
+
 
 def combine_AP_and_AHP_properties(AP_dict, AHP_dict):
     """Merges AP dict and AHP dict."""
