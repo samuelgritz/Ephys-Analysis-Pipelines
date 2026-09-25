@@ -23,13 +23,23 @@ if (file.exists("paper_data")) {
 }
 
 # Try to find the file
-file_path <- file.path(data_root, "GIRK_df.csv")
-if (!file.exists(file_path)) {
-   # Try explicit list from previous listing
-   if (file.exists("GIRK_df.csv")) file_path <- "GIRK_df.csv"
+possible_paths <- c(
+  "R_scripts/GIRK_df.csv",
+  "paper_data/Plateau_data/GIRK_df.csv",
+  "GIRK_df.csv",
+  "../paper_data/Plateau_data/GIRK_df.csv",
+  "../R_scripts/GIRK_df.csv"
+)
+
+file_path <- NULL
+for (p in possible_paths) {
+  if (file.exists(p)) {
+    file_path <- p
+    break
+  }
 }
 
-if (!file.exists(file_path)) {
+if (is.null(file_path)) {
   stop("Could not find GIRK_df.csv")
 }
 
@@ -50,6 +60,8 @@ conjugated_df <- raw_df %>%
   mutate(
     Group = factor(paste(Genotype, Drug, Condition, sep = "_")),
     Subject = factor(Subject),
+    # Derive Animal from Subject: strip _cN suffix (each date = one mouse)
+    Animal = factor(sub("_c[0-9]+$", "", as.character(Subject))),
     Genotype_Drug_Condition = interaction(Genotype, Drug, Condition),
     Genotype_Drug_Condition = factor(Genotype_Drug_Condition, levels = custom_levels),
     # Separate factors for emmeans
@@ -58,6 +70,9 @@ conjugated_df <- raw_df %>%
     Condition = factor(Condition, levels = c("Before", "After"))
   )
 
+cat("N subjects (cells):", length(unique(conjugated_df$Subject)), "\n")
+cat("N animals (dates):", length(unique(conjugated_df$Animal)), "\n")
+
 # ==============================================================================
 # 2. WITHIN-GROUP CONTRASTS (Before vs After)
 # ==============================================================================
@@ -65,7 +80,7 @@ conjugated_df <- raw_df %>%
 # Model LME
 mod_lme <- lme(
   Plateau_Area ~ Genotype * Drug * Condition,
-  random = ~1 | Subject,
+  random = ~1 | Animal/Subject,
   data = conjugated_df
 )
 
@@ -107,6 +122,8 @@ print(contrasts_means_df)
 conjugated_df2 <- raw_df %>%
   mutate(
     Subject = factor(Subject),
+    # Derive Animal from Subject: strip _cN suffix (each date = one mouse)
+    Animal = factor(sub("_c[0-9]+$", "", as.character(Subject))),
     Condition = factor(Condition, levels = c("Before", "After")),
     Condition_num = ifelse(Condition == "Before", 0, 1),
     Genotype = factor(Genotype),
@@ -115,7 +132,7 @@ conjugated_df2 <- raw_df %>%
 
 mod_lme2 <- lme(
   Plateau_Area ~ Genotype * Drug * Condition_num,
-  random = ~1 | Subject,
+  random = ~1 | Animal/Subject,
   data = conjugated_df2
 )
 

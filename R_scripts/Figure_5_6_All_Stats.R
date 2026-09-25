@@ -10,8 +10,10 @@
 #   - E:I Imbalance — WT vs GNB1 per pathway
 #
 # STATISTICAL MODEL:
-#   Linear Mixed Effects (LME) with Subject as random effect:
-#     response ~ Genotype * ISI_Time + (1 | Subject)
+#   Linear Mixed Effects (LME) with nested random effects:
+#     response ~ Genotype * ISI_Time + (1 | Animal/Subject)
+#   Animal = date portion of Cell_ID (each date = one mouse)
+#   Subject = Cell_ID (each cell nested within an animal)
 #
 # FDR CORRECTION LOGIC:
 #   For each ANALYSIS (e.g. Excitation) × PATHWAY (e.g. Perforant):
@@ -89,12 +91,15 @@ E_I_experiment_long <- E_I_experiment_clean %>%
     Drug = factor(Drug, levels = c(0, 1), labels = c("Control", "Gabazine")),
     Pathway = as.factor(Pathway),
     Subject = as.factor(Subject),
+    # Derive Animal from Subject: strip _cN suffix (each date = one mouse)
+    Animal = as.factor(sub("_c[0-9]+$", "", as.character(Subject))),
     # ISI_Time is ordered: ISI10, ISI25, ISI50, ISI100, ISI300
     ISI_Time = factor(ISI_Time, levels = ISI_cols)
   )
 
 cat("  Converted to long format:", nrow(E_I_experiment_long), "rows\n")
-cat("  Subjects (cells):", length(unique(E_I_experiment_long$Subject)), "\n\n")
+cat("  Subjects (cells):", length(unique(E_I_experiment_long$Subject)), "\n")
+cat("  Animals (dates):", length(unique(E_I_experiment_long$Animal)), "\n\n")
 
 # -----------------------------------------------------------------------------
 # Load E_I amplitudes data (already long-ish format)
@@ -115,6 +120,8 @@ cat("  Rows:", nrow(E_I_data), "\n\n")
 E_I_clean <- E_I_data %>%
   mutate(
     Subject = as.factor(Cell_ID),
+    # Derive Animal from Cell_ID: strip _cN suffix (each date = one mouse)
+    Animal = as.factor(sub("_c[0-9]+$", "", as.character(Cell_ID))),
     Genotype = as.factor(Genotype),
     Pathway = as.factor(Pathway),
     # Convert numeric ISI column to factor matching ISI_cols naming
@@ -141,7 +148,8 @@ pathway_names <- c("1" = "Perforant", "2" = "Schaffer", "3" = "Basal_Stratum_Ori
 # 3. HELPER FUNCTION: Run LME and Extract ANOVA + Post-hoc Results
 #
 # This function:
-#   1. Fits a linear mixed effects model (LME) with Subject as random effect
+#   1. Fits a linear mixed effects model (LME) with Animal/Subject as random effects
+#      (cells nested within animals)
 #   2. Extracts the ANOVA table (Type III tests)
 #   3. Checks for significant INTERACTION EFFECT (Genotype:ISI_Time)
 #   4. If interaction is significant: runs post-hoc pairwise comparisons
@@ -172,14 +180,14 @@ run_lmer_analysis <- function(data, formula_str, analysis_name, pathway_name,
   # -------------------------------------------------------------------------
   # Step 1: Data cleaning — keep only columns needed for this model
   # -------------------------------------------------------------------------
-  model_cols <- c("Subject", "Genotype", "Drug", "ISI_Time", analysis_name)
+  model_cols <- c("Subject", "Animal", "Genotype", "Drug", "ISI_Time", analysis_name)
   model_data <- data %>%
     select(all_of(model_cols[model_cols %in% names(data)])) %>%
     drop_na(all_of(analysis_name))
   
   # -------------------------------------------------------------------------
   # Step 2: Fit LME model
-  # Subject = random intercept (repeated measures within each cell)
+  # Animal/Subject = nested random intercepts (cells within animals)
   # -------------------------------------------------------------------------
   model <- tryCatch({
     lmer(as.formula(formula_str), data = model_data, REML = TRUE)
@@ -347,7 +355,7 @@ run_lmer_analysis <- function(data, formula_str, analysis_name, pathway_name,
 # 4. EXCITATION AMPLITUDE ANALYSES — ALL PATHWAYS
 #
 # Analysis: Gabazine EPSP Amplitude (excitatory component after GABAA block)
-# Model:    Gabazine_Amplitude ~ Genotype * ISI_Time + (1 | Subject)
+# Model:    Gabazine_Amplitude ~ Genotype * ISI_Time + (1 | Animal/Subject)
 # Question: Does excitation differ between WT and GNB1 across ISIs?
 #
 # Also runs Control amplitude and within-genotype Drug effect analyses.
@@ -384,7 +392,7 @@ for (pathway_code in c("1", "2", "3")) {
     
   result_gab <- run_lmer_analysis(
     data = gabazine_data,
-    formula_str = "Gabazine_Amplitude ~ Genotype + Genotype * ISI_Time + (1 | Subject)",
+    formula_str = "Gabazine_Amplitude ~ Genotype + Genotype * ISI_Time + (1 | Animal/Subject)",
     analysis_name = "Gabazine_Amplitude",
     pathway_name = pathway_name,
     comparison_name = "WT_vs_GNB1",
@@ -409,7 +417,7 @@ for (pathway_code in c("1", "2", "3")) {
     
   result_ctrl <- run_lmer_analysis(
     data = control_data,
-    formula_str = "Control_Amplitude ~ Genotype + Genotype * ISI_Time + (1 | Subject)",
+    formula_str = "Control_Amplitude ~ Genotype + Genotype * ISI_Time + (1 | Animal/Subject)",
     analysis_name = "Control_Amplitude",
     pathway_name = pathway_name,
     comparison_name = "WT_vs_GNB1_Control",
@@ -430,7 +438,7 @@ for (pathway_code in c("1", "2", "3")) {
   wt_data <- E_I_experiment_long %>% filter(Pathway == pathway_code & Genotype == "WT")
   result_wt <- run_lmer_analysis(
     data = wt_data,
-    formula_str = "EPSP_Amplitude ~ Drug + Drug * ISI_Time + (1 | Subject)",
+    formula_str = "EPSP_Amplitude ~ Drug + Drug * ISI_Time + (1 | Animal/Subject)",
     analysis_name = "EPSP_Amplitude",
     pathway_name = pathway_name,
     comparison_name = "WT_Control_vs_Gabazine",
@@ -451,7 +459,7 @@ for (pathway_code in c("1", "2", "3")) {
   gnb1_data <- E_I_experiment_long %>% filter(Pathway == pathway_code & Genotype == "GNB1")
   result_gnb1 <- run_lmer_analysis(
     data = gnb1_data,
-    formula_str = "EPSP_Amplitude ~ Drug + Drug * ISI_Time + (1 | Subject)",
+    formula_str = "EPSP_Amplitude ~ Drug + Drug * ISI_Time + (1 | Animal/Subject)",
     analysis_name = "EPSP_Amplitude",
     pathway_name = pathway_name,
     comparison_name = "GNB1_Control_vs_Gabazine",
@@ -471,7 +479,7 @@ for (pathway_code in c("1", "2", "3")) {
 # 5. GABAZINE SUPRALINEARITY ANALYSES
 #
 # Analysis: Gabazine_Supralinearity = Gabazine_EPSP - Control_EPSP (% difference)
-# Model:    Gabazine_Supralinearity ~ Genotype * ISI_Time + (1 | Subject)
+# Model:    Gabazine_Supralinearity ~ Genotype * ISI_Time + (1 | Animal/Subject)
 # Question: Does the supralinear boost differ between WT and GNB1 across ISIs?
 # FDR:      Pool 5 ISI p-values per pathway, correct independently
 ################################################################################
@@ -505,7 +513,7 @@ for (pathway_name in c("Perforant", "Schaffer", "Basal_Stratum_Oriens")) {
   
   result <- run_lmer_analysis(
     data = supra_data,
-    formula_str = "Gabazine_Supralinearity ~ Genotype + Genotype * ISI_Time + (1 | Subject)",
+    formula_str = "Gabazine_Supralinearity ~ Genotype + Genotype * ISI_Time + (1 | Animal/Subject)",
     analysis_name = "Gabazine_Supralinearity",
     pathway_name = pathway_name,
     comparison_name = "WT_vs_GNB1",
@@ -525,7 +533,7 @@ for (pathway_name in c("Perforant", "Schaffer", "Basal_Stratum_Oriens")) {
 # 6. E:I IMBALANCE ANALYSES
 #
 # Analysis: E_I_Imbalance = Excitation / (Excitation + Inhibition)
-# Model:    E_I_Imbalance ~ Genotype * ISI_Time + (1 | Subject)
+# Model:    E_I_Imbalance ~ Genotype * ISI_Time + (1 | Animal/Subject)
 # Question: Does the E:I balance shift between WT and GNB1 across ISIs?
 # FDR:      Pool 5 ISI p-values per pathway, correct independently
 ################################################################################
@@ -559,7 +567,7 @@ for (pathway_name in c("Perforant", "Schaffer", "Basal_Stratum_Oriens")) {
   
   result <- run_lmer_analysis(
     data = ei_data,
-    formula_str = "E_I_Imbalance ~ Genotype + Genotype * ISI_Time + (1 | Subject)",
+    formula_str = "E_I_Imbalance ~ Genotype + Genotype * ISI_Time + (1 | Animal/Subject)",
     analysis_name = "E_I_Imbalance",
     pathway_name = pathway_name,
     comparison_name = "WT_vs_GNB1",
@@ -579,7 +587,7 @@ for (pathway_name in c("Perforant", "Schaffer", "Basal_Stratum_Oriens")) {
 # 7. GABAA INHIBITION ANALYSES
 #
 # Analysis: GABAA Inhibition Amplitude (Control - Gabazine, negative = inhibition)
-# Model:    Inhibition_Amplitude ~ Genotype * ISI_Time + (1 | Subject)
+# Model:    Inhibition_Amplitude ~ Genotype * ISI_Time + (1 | Animal/Subject)
 # Question: Does GABAA-mediated inhibition differ between WT and GNB1?
 # FDR:      Pool 5 ISI p-values per pathway, correct independently
 ################################################################################
@@ -607,6 +615,7 @@ if (file.exists(file_name_inh)) {
       Genotype = as.factor(Genotype),
       Pathway = factor(Pathway, levels = c(1, 2, 3), labels = c("Perforant", "Schaffer", "Basal_Stratum_Oriens")),
       Subject = as.factor(Subject),
+      Animal = as.factor(sub("_c[0-9]+$", "", as.character(Subject))),
       ISI_Time = factor(ISI_Time, levels = ISI_cols)
     )
 
@@ -632,7 +641,7 @@ if (file.exists(file_name_inh)) {
     
     result <- run_lmer_analysis(
       data = subset_data,
-      formula_str = "Inhibition_Amplitude ~ Genotype + Genotype * ISI_Time + (1 | Subject)",
+      formula_str = "Inhibition_Amplitude ~ Genotype + Genotype * ISI_Time + (1 | Animal/Subject)",
       analysis_name = "Inhibition_Amplitude",
       pathway_name = pathway_name,
       comparison_name = "WT_vs_GNB1",
@@ -656,7 +665,7 @@ if (file.exists(file_name_inh)) {
 #
 # Analysis: GABAB Area = integral of negative-going (below zero) trace component
 #           measured from the Gabazine trace (after GABAA block)
-# Model:    GABAB_Area ~ Genotype * ISI_Time + (1 | Subject)
+# Model:    GABAB_Area ~ Genotype * ISI_Time + (1 | Animal/Subject)
 # Question: Does GABAB-mediated inhibition area differ between WT and GNB1?
 # FDR:      Pool 5 ISI p-values per pathway, correct independently
 ################################################################################
@@ -684,6 +693,7 @@ if (file.exists(file_name_gabab)) {
       Genotype = as.factor(Genotype),
       Pathway = factor(Pathway, levels = c(1, 2, 3), labels = c("Perforant", "Schaffer", "Basal_Stratum_Oriens")),
       Subject = as.factor(Subject),
+      Animal = as.factor(sub("_c[0-9]+$", "", as.character(Subject))),
       ISI_Time = factor(ISI_Time, levels = ISI_cols)
     )
 
@@ -709,7 +719,7 @@ if (file.exists(file_name_gabab)) {
     
     result <- run_lmer_analysis(
       data = subset_data,
-      formula_str = "GABAB_Area ~ Genotype + Genotype * ISI_Time + (1 | Subject)",
+      formula_str = "GABAB_Area ~ Genotype + Genotype * ISI_Time + (1 | Animal/Subject)",
       analysis_name = "GABAB_Area",
       pathway_name = pathway_name,
       comparison_name = "WT_vs_GNB1",
@@ -1014,8 +1024,7 @@ cat("===========================================================================
 cat("  1.", output_anova, "\n")
 cat("  2.", output_uncorrected, "\n")
 cat("  3.", output_corrected, "\n")
-cat("  4.", output_summary, "\n")
-cat("  5.", output_markers, "\n")
+cat("  4.", output_markers, "\n")
 cat("==============================================================================\n")
 cat("ANALYSIS COMPLETE\n")
 cat("==============================================================================\n")

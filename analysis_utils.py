@@ -3489,6 +3489,7 @@ def parse_plateau_sweeps_column(sweeps_entry):
             if current_key.lower() == 'etx': current_key = 'ETX'
             elif current_key.lower() == 'ml297': current_key = 'ML297'
             elif current_key.lower() == 'gabazine': current_key = 'Gabazine'
+            elif current_key.lower() in ['2-dg', '2dg']: current_key = '2-DG'
             
             sweep_val = val.strip()
         else:
@@ -3530,17 +3531,23 @@ def load_plateau_traces_from_dir(data_dir, master_df=None):
             df = pd.read_pickle(os.path.join(data_dir, f))
             for i in range(len(df)):
                 row = df.iloc[i]
-                desc = row.get('experiment_description', '')
-                if 'Theta Stim' in desc:
-                    if std_id not in plateau_traces: plateau_traces[std_id] = {}
-                    if desc not in plateau_traces[std_id]: plateau_traces[std_id][desc] = {}
-                    
-                    # Look for offset trace first
+                desc = str(row.get('experiment_description', ''))
+                if 'theta' in desc.lower() or 'plateau' in desc.lower():
+                    # Look for offset trace first, then other processed traces, then raw sweep
                     trace = None
-                    if 'intermediate_traces' in row:
-                        trace = row['intermediate_traces'].get('offset_trace')
+                    if 'intermediate_traces' in row and isinstance(row['intermediate_traces'], dict):
+                        it = row['intermediate_traces']
+                        for key in ['offset_trace', 'stim_removed_trace', 'noise_removed_trace', 'interpolated_spikes_trace']:
+                            if key in it and it[key] is not None:
+                                trace = it[key]
+                                break
+                    if trace is None:
+                        trace = row.get('sweep')
                     
                     if trace is not None:
+                        if std_id not in plateau_traces: plateau_traces[std_id] = {}
+                        if desc not in plateau_traces[std_id]: plateau_traces[std_id][desc] = {}
+                        
                         # Zero to 450-500ms baseline window
                         # 20kHz: 450ms = 9000 idx, 500ms = 10000 idx
                         if len(trace) > 10000:
@@ -3711,7 +3718,7 @@ def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_thres
     # Standard threshold is positive (e.g. 20) as offset_trace starts at 0
     threshold_mv = plateau_threshold_mv
     
-    groups = ['Gabazine_Only', 'Before_ML297', 'After_ML297', 'Before_ETX', 'After_ETX']
+    groups = ['Gabazine_Only', 'Before_ML297', 'After_ML297', 'Before_ETX', 'After_ETX', 'Before_2DG', 'After_2DG']
     for g in groups: final_traces_dict[g] = {}
 
     if 'Cell_ID' not in master_df.columns:
@@ -3730,7 +3737,13 @@ def categorize_and_extract_plateau_data(plateau_traces, master_df, plateau_thres
         drugs_present = list(sweeps_map.keys())
         
         # --- LOGIC TREE ---
-        if 'ML297' in drugs_present and 'Gabazine' in drugs_present:
+        if '2-DG' in drugs_present and 'Gabazine' in drugs_present:
+            for s in sweeps_map['Gabazine']:
+                _extract_single_plateau_condition(cell_id, row, s, 'Before_2DG', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
+            for s in sweeps_map['2-DG']:
+                _extract_single_plateau_condition(cell_id, row, s, 'After_2DG', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
+
+        elif 'ML297' in drugs_present and 'Gabazine' in drugs_present:
             for s in sweeps_map['Gabazine']:
                 _extract_single_plateau_condition(cell_id, row, s, 'Before_ML297', plateau_traces, final_data_list, final_traces_dict, threshold_mv=threshold_mv)
             for s in sweeps_map['ML297']:
@@ -4455,7 +4468,7 @@ def analyze_spike_rate_per_theta_cycle(data_dir, master_df, sampling_rate=20000,
             
             try:
                 df_cell = pd.read_pickle(os.path.join(data_dir, filename))
-                valid_conditions = ['Gabazine', 'Gabazine_Only', 'Before_ML297', 'Before_ETX']
+                valid_conditions = ['Gabazine', 'Gabazine_Only', 'Before_ML297', 'Before_ETX', '2-DG', 'Before_2DG', 'After_2DG']
                 
                 for stim_type, pathway in stim_pathway_map.items():
                     if 'stim_type' not in df_cell.columns: continue
@@ -4500,10 +4513,11 @@ def analyze_spike_rate_per_theta_cycle(data_dir, master_df, sampling_rate=20000,
                 
     return results_list, spike_rates_per_cycle
 
-def analyze_plateau_area_per_theta_cycle(master_df, categorized_traces, sampling_rate=20000, threshold_mv=20):
+def analyze_plateau_area_per_theta_cycle(master_df, categorized_traces, sampling_rate=20000, threshold_mv=20, groups=None):
     """
     Analyze Plateau Area (AUC) per theta cycle for Theta_Burst stimulation.
-    Uses ONLY baseline conditions: Gabazine_Only, Before_ML297, Before_ETX.
+    groups: List of group names to process from categorized_traces.
+            If None, processes all non-empty condition groups present in categorized_traces.
     Area is returned in mV-seconds (consistent with Plateau_Area in paper).
     Windows are aligned to exact burst start times.
     threshold_mv: mV threshold for plateau detection (integrates ONLY area ABOVE this value)
@@ -4519,14 +4533,18 @@ def analyze_plateau_area_per_theta_cycle(master_df, categorized_traces, sampling
     # Metadata lookups
     genotype_lookup = dict(zip(master_df['Cell_ID'].astype(str), master_df['Genotype']))
     sex_lookup = dict(zip(master_df['Cell_ID'].astype(str), master_df['Sex']))
-    baseline_groups = ['Gabazine_Only', 'Before_ML297', 'Before_ETX']
     
-    print(f"  Analyzing plateau area per theta cycle (mV-s) for groups: {baseline_groups}")
+    if groups is None:
+        target_groups = [g for g in categorized_traces.keys() if len(categorized_traces[g]) > 0]
+    else:
+        target_groups = groups
     
-    # Store areas for averaging: cell_cycle_data[cell_id][pathway][cycle] = [list of areas]
+    print(f"  Analyzing plateau area per theta cycle (mV-s) for groups: {target_groups}")
+    
+    # Store areas for averaging: cell_cycle_data[cell_id][group_name][pathway][cycle] = [list of areas]
     cell_cycle_data = {}
 
-    for group_name in baseline_groups:
+    for group_name in target_groups:
         if group_name not in categorized_traces: continue
         
         for cell_id, pathways_dict in categorized_traces[group_name].items():
@@ -4534,16 +4552,17 @@ def analyze_plateau_area_per_theta_cycle(master_df, categorized_traces, sampling
             if genotype is None: continue
             
             if cell_id not in cell_cycle_data: cell_cycle_data[cell_id] = {}
+            if group_name not in cell_cycle_data[cell_id]: cell_cycle_data[cell_id][group_name] = {}
             
             for pathway, trace in pathways_dict.items():
                 final_pathway = None
                 if 'Both' in pathway: final_pathway = 'Both Pathways'
                 elif 'Perforant' in pathway: final_pathway = 'Perforant'
                 elif 'Schaffer' in pathway: final_pathway = 'Schaffer'
-                if final_pathway is None: continue
+                if final_pathway is None: final_pathway = pathway
                 
-                if final_pathway not in cell_cycle_data[cell_id]:
-                    cell_cycle_data[cell_id][final_pathway] = {1:[], 2:[], 3:[], 4:[], 5:[]}
+                if final_pathway not in cell_cycle_data[cell_id][group_name]:
+                    cell_cycle_data[cell_id][group_name][final_pathway] = {1:[], 2:[], 3:[], 4:[], 5:[]}
                 
                 if trace is None or len(trace) == 0: continue
                 
@@ -4573,24 +4592,26 @@ def analyze_plateau_area_per_theta_cycle(master_df, categorized_traces, sampling
                         # Note: In cycle analysis, we integrate even if peak < threshold (it will just be 0 area)
                         # No smoothed peak check per USER request
                         area_mv_s = np.trapz(suprathreshold_trace, dx=1/sampling_rate)
-                        cell_cycle_data[cell_id][final_pathway][cycle_idx + 1].append(area_mv_s)
+                        cell_cycle_data[cell_id][group_name][final_pathway][cycle_idx + 1].append(area_mv_s)
     
-    for cell_id, pathways in cell_cycle_data.items():
+    for cell_id, cond_dict in cell_cycle_data.items():
         genotype = genotype_lookup.get(cell_id)
         sex = sex_lookup.get(cell_id, 'Unknown')
         
-        for pathway, cycles in pathways.items():
-            for cycle in range(1, 6):
-                if cycles[cycle]:
-                    avg_area = np.mean(cycles[cycle])
-                    results_list.append({
-                        'Cell_ID': cell_id,
-                        'Genotype': genotype,
-                        'Sex': sex,
-                        'Pathway': pathway,
-                        'Cycle_Index': cycle,
-                        'Plateau_Area': avg_area
-                    })
+        for group_name, pathways in cond_dict.items():
+            for pathway, cycles in pathways.items():
+                for cycle in range(1, 6):
+                    if cycles[cycle]:
+                        avg_area = np.mean(cycles[cycle])
+                        results_list.append({
+                            'Cell_ID': cell_id,
+                            'Genotype': genotype,
+                            'Sex': sex,
+                            'Condition': group_name,
+                            'Pathway': pathway,
+                            'Cycle_Index': cycle,
+                            'Plateau_Area': avg_area
+                        })
     
     return results_list
     

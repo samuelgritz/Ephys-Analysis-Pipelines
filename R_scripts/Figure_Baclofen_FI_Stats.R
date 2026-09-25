@@ -6,6 +6,12 @@ data_path <- "../paper_data/gabab_analysis/Baclofen_FI_Difference.csv"
 if (!file.exists(data_path)) {
   data_path <- "paper_data/gabab_analysis/Baclofen_FI_Difference.csv" # Fallback
 }
+if (!file.exists(data_path)) {
+  data_path <- "../paper_data/gabab_analysis/exploratory/Baclofen_FI_Difference.csv" # Exploratory fallback
+}
+if (!file.exists(data_path)) {
+  data_path <- "paper_data/gabab_analysis/exploratory/Baclofen_FI_Difference.csv" # Exploratory fallback
+}
 
 if (!file.exists(data_path)) {
   stop(paste("Error: Data file not found at", data_path))
@@ -23,6 +29,10 @@ cat(paste("Unqiue Cells:", length(unique(df$Cell_ID)), "\n"))
 df$Genotype <- factor(df$Genotype, levels = c("WT", "GNB1"))
 df$Current_pA_Factor <- factor(df$Current_pA)
 df$Subject <- factor(df$Cell_ID)
+# Derive Animal from Cell_ID: strip _cN suffix (each date = one mouse)
+df$Animal <- factor(sub("_c[0-9]+$", "", as.character(df$Cell_ID)))
+
+cat(paste("Unique Animals:", length(unique(df$Animal)), "\n"))
 
 # Try using lmerTest for Mixed Model (Preferred)
 use_lmer <- FALSE
@@ -30,14 +40,15 @@ if (require("lmerTest", quietly = TRUE)) {
   use_lmer <- TRUE
   cat("\n[Method] Using Linear Mixed-Effects Model (lmerTest)...\n")
   
-  model <- lmer(Difference_FR ~ Genotype + Genotype * Current_pA_Factor + (1 | Subject), data = df)
+  model <- lmer(Difference_FR ~ Genotype + Genotype * Current_pA_Factor + (1 | Animal/Subject), data = df)
   
   cat("\n--- ANOVA Table (Type III) ---\n")
   ano <- anova(model, type = 3)
   print(ano)
   
   # Save
-  write.csv(as.data.frame(ano), "../paper_data/gabab_analysis/Figure_5_FI_Stats_R_LMM.csv")
+  output_dir <- dirname(data_path)
+  write.csv(as.data.frame(ano), file.path(output_dir, "Figure_5_FI_Stats_R_LMM.csv"))
   
   # Post-hoc pairwise comparisons using emmeans
   if (require("emmeans", quietly = TRUE)) {
@@ -53,15 +64,16 @@ if (require("lmerTest", quietly = TRUE)) {
     print(posthoc_adj)
     
     # Save posthoc results
-    write.csv(as.data.frame(posthoc_adj), "../paper_data/gabab_analysis/Figure_5_FI_PostHoc_Stats.csv", row.names = FALSE)
-    cat("\n✓ Post-Hoc Stats saved to: ../paper_data/gabab_analysis/Figure_5_FI_PostHoc_Stats.csv\n")
+    write.csv(as.data.frame(posthoc_adj), file.path(output_dir, "Figure_5_FI_PostHoc_Stats.csv"), row.names = FALSE)
+    cat("\n✓ Post-Hoc Stats saved to:", file.path(output_dir, "Figure_5_FI_PostHoc_Stats.csv"), "\n")
   } else {
     cat("\n⚠ 'emmeans' package not installed. Skipping post-hoc tests. (Run 'install.packages(\"emmeans\")' to enable)\n")
   }
   
 } else {
-  cat("\n[Method] 'lmerTest' not found. Using Standard Repeated Measures ANOVA (aov)...\n")
-  cat("Model: Difference ~ Genotype * Current + Error(Subject/Current)\n")
+  cat("\n[Method] 'lmerTest' not found. Using Standard ANOVA (aov)...\n")
+  cat("NOTE: aov() does not support nested Animal/Subject random effects.\n")
+  cat("Model: Difference ~ Genotype * Current\n")
   
   # Repeated Measures ANOVA
   # Error term (Subject/Current_pA_Factor) accounts for repeated measures

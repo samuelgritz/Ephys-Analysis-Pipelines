@@ -868,12 +868,12 @@ def run_stats_supplemental_figure_3():
         
         print(f"Absolute Levels: WT n={len(wt_abs)}, I80T n={len(i80t_abs)}")
         
-        # Compare Absolute
-        res = compare_two_groups(pd.Series(wt_abs), pd.Series(i80t_abs))
+        # Compare Absolute (Unpaired t-test)
+        res = compare_groups_ttest(wt_abs, i80t_abs)
         record_stat("Supp Fig 3 (Top)", "Absolute Protein Levels: WT vs I80T", res)
         
-        # Compare Relative
-        res = compare_two_groups(pd.Series(wt_rel), pd.Series(i80t_rel))
+        # Compare Relative (Unpaired t-test)
+        res = compare_groups_ttest(wt_rel, i80t_rel)
         record_stat("Supp Fig 3 (Bottom)", "Relative Protein Levels: WT vs I80T", res)
 
     # --- EXPORT ---
@@ -884,6 +884,147 @@ def run_stats_supplemental_figure_3():
         stats_df.to_csv(save_path, index=False)
         print(f"\n✓ Saved Supplemental Figure 3 stats to: {save_path}")
 
+# ==================================================================================================
+# SEX DIFFERENCES STATS
+# ==================================================================================================
+
+def run_stats_sex_differences():
+    print("\n" + "="*80)
+    print("SUPPLEMENTAL FIGURE: SEX DIFFERENCES STATISTICS")
+    print("="*80)
+    
+    all_stats_export = []
+
+    def record_stat(fig_panel, comparison_name, res):
+        print_stat_result(fig_panel, comparison_name, res)
+        all_stats_export.append({
+            'Figure_Panel': fig_panel,
+            'Comparison': comparison_name,
+            'Test_Used': res['Test'],
+            'Statistic': res['Statistic'],
+            'P_Value': res['p'],
+            'Significance': res['Significance']
+        })
+
+    # 1. Weights
+    df_w = load_data('Behavior_Analysis', 'Mouse_Weights_Processed.csv')
+    if df_w is not None:
+        sex_map = {'M': 'M', 'Male': 'M', 'F': 'F', 'Female': 'F'}
+        df_w['SexGeno'] = df_w['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + df_w['Sex'].astype(str).str.strip().map(sex_map)
+        for tp in ['P8-P10', 'P28', 'Adult']:
+            sub = df_w[df_w['Timepoint_Label'] == tp]
+            for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+                ga, gb = comp.split(' vs ')
+                va = sub[sub['SexGeno'] == ga]['Weight_g'].dropna()
+                vb = sub[sub['SexGeno'] == gb]['Weight_g'].dropna()
+                res = compare_two_groups(va, vb)
+                record_stat(f"Weight ({tp})", f"Weight ({tp}) [{sex}]: {comp}", res)
+
+    # 2. DVC Dark Phase
+    df_dvc = load_data('DVC_Analysis', 'Cage_Specific_Hours_Summary.csv')
+    if df_dvc is not None:
+        df_dvc['SexGeno'] = df_dvc['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + df_dvc['Sex'].astype(str).str.strip().map({'M': 'M', 'Male': 'M', 'F': 'F', 'Female': 'F'})
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            va = df_dvc[df_dvc['SexGeno'] == ga]['Sum_All_Dark'].dropna()
+            vb = df_dvc[df_dvc['SexGeno'] == gb]['Sum_All_Dark'].dropna()
+            res = compare_two_groups(va, vb)
+            record_stat("Circadian Activity", f"Summed Dark Activity [{sex}]: {comp}", res)
+
+    # 3. Open Field
+    df_loc = load_data('Behavior_Analysis', 'Open_Field_Locomotion_Trial1.csv')
+    df_anx = load_data('Behavior_Analysis', 'Open_Field_Anxiety_Processed.csv')
+    if df_loc is not None:
+        df_loc['SexGeno'] = df_loc['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + df_loc['Sex'].astype(str).str.strip().map({'M': 'M', 'Male': 'M', 'F': 'F', 'Female': 'F'})
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            va = df_loc[df_loc['SexGeno'] == ga]['Distance (m)'].dropna()
+            vb = df_loc[df_loc['SexGeno'] == gb]['Distance (m)'].dropna()
+            res = compare_two_groups(va, vb)
+            record_stat("Open Field Locomotion", f"Locomotion [{sex}]: {comp}", res)
+
+    if df_anx is not None:
+        df_anx['SexGeno'] = df_anx['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + df_anx['Sex'].astype(str).str.strip().map({'M': 'M', 'Male': 'M', 'F': 'F', 'Female': 'F'})
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            va = df_anx[df_anx['SexGeno'] == ga]['Center_Outer_Time_Ratio'].dropna()
+            vb = df_anx[df_anx['SexGeno'] == gb]['Center_Outer_Time_Ratio'].dropna()
+            res = compare_two_groups(va, vb)
+            record_stat("Open Field Anxiety", f"Anxiety [{sex}]: {comp}", res)
+
+    # 4. T-Maze
+    df_t_ent = load_data('Behavior_Analysis', 'T_Maze_Zone_Entries.csv')
+    df_t_alt = load_data('Behavior_Analysis', 'T_Maze_Alternations.csv')
+    if df_t_ent is not None and df_t_alt is not None:
+        sex_map = {'M': 'M', 'Male': 'M', 'F': 'F', 'Female': 'F'}
+        df_t_ent['SexGeno'] = df_t_ent['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + df_t_ent['Sex'].astype(str).str.strip().map(sex_map)
+        df_t_alt['SexGeno'] = df_t_alt['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + df_t_alt['Sex'].astype(str).str.strip().map(sex_map)
+        df_t_ent['Total_Arm_Entries'] = df_t_ent['Start : entries'] + df_t_ent['Left Arm : entries'] + df_t_ent['Right Arm : entries']
+        
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            v_dist_a = df_t_ent[df_t_ent['SexGeno'] == ga]['Distance (m)'].dropna()
+            v_dist_b = df_t_ent[df_t_ent['SexGeno'] == gb]['Distance (m)'].dropna()
+            res_dist = compare_two_groups(v_dist_a, v_dist_b)
+            record_stat("T-Maze Distance", f"Distance [{sex}]: {comp}", res_dist)
+
+            v_ent_a = df_t_ent[df_t_ent['SexGeno'] == ga]['Total_Arm_Entries'].dropna()
+            v_ent_b = df_t_ent[df_t_ent['SexGeno'] == gb]['Total_Arm_Entries'].dropna()
+            res_ent = compare_two_groups(v_ent_a, v_ent_b)
+            record_stat("T-Maze Entries", f"Entries [{sex}]: {comp}", res_ent)
+
+            v_alt_a = df_t_alt[df_t_alt['SexGeno'] == ga]['Percent_Alternations'].dropna()
+            v_alt_b = df_t_alt[df_t_alt['SexGeno'] == gb]['Percent_Alternations'].dropna()
+            res_alt = compare_two_groups(v_alt_a, v_alt_b)
+            record_stat("T-Maze Alternations", f"Alternations [{sex}]: {comp}", res_alt)
+
+    # 5. FI Midpoint
+    master_path = 'master_df.csv' if os.path.exists('master_df.csv') else os.path.join(DATA_ROOT, 'master_df.csv')
+    master = pd.read_csv(master_path, low_memory=False) if os.path.exists(master_path) else None
+    fi = load_data('Firing_Rate', 'Sigmoid_Fit_Params.csv')
+    if master is not None and fi is not None:
+        master['Cell_ID'] = master['Cell_ID'].astype(str).str.strip()
+        master['Sex']     = master['Sex'].astype(str).str.strip()
+        fi['Cell_ID']     = fi['Cell_ID'].astype(str).str.strip()
+        fi = fi.merge(master[['Cell_ID', 'Sex']].drop_duplicates(), on='Cell_ID', how='left')
+        fi['SexGeno'] = fi['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + fi['Sex'].map({'Male': 'M', 'Female': 'F', 'M': 'M', 'F': 'F'})
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            va = fi[fi['SexGeno'] == ga]['Midpoint'].dropna()
+            vb = fi[fi['SexGeno'] == gb]['Midpoint'].dropna()
+            res = compare_two_groups(va, vb)
+            record_stat("Somatic Excitability", f"FI Midpoint [{sex}]: {comp}", res)
+
+    # 5. Plateau Area
+    plat = load_data('Plateau_data', 'Plateau_data.csv')
+    if plat is not None:
+        gab = plat[plat['Condition'].str.contains('Gabazine', na=False, case=False)].copy()
+        gab['SexGeno'] = gab['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + gab['Sex'].astype(str).str.strip().map({'Male': 'M', 'Female': 'F', 'M': 'M', 'F': 'F'})
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            va = gab[gab['SexGeno'] == ga]['Plateau_Area'].dropna()
+            vb = gab[gab['SexGeno'] == gb]['Plateau_Area'].dropna()
+            res = compare_two_groups(va, vb)
+            record_stat("Dendritic Excitability", f"Plateau Area [{sex}]: {comp}", res)
+
+    # 5b. Somatic Input Resistance
+    intr = load_data('Physiology_Analysis', 'Intrinsic_properties.csv')
+    if intr is not None:
+        intr['SexGeno'] = intr['Genotype'].replace({'GNB1': 'I80T/+'}) + '-' + intr['Sex'].astype(str).str.strip().map({'Male': 'M', 'Female': 'F', 'M': 'M', 'F': 'F'})
+        for comp, sex in [('WT-M vs I80T/+-M', 'Male'), ('WT-F vs I80T/+-F', 'Female')]:
+            ga, gb = comp.split(' vs ')
+            va = intr[intr['SexGeno'] == ga]['Input_Resistance_MOhm'].dropna()
+            vb = intr[intr['SexGeno'] == gb]['Input_Resistance_MOhm'].dropna()
+            res = compare_two_groups(va, vb)
+            record_stat("Somatic Input Resistance", f"Input Resistance [{sex}]: {comp}", res)
+
+    # Export
+    if all_stats_export:
+        stats_df = pd.DataFrame(all_stats_export)
+        save_path = os.path.join(DATA_ROOT, 'Stats_Results_Sex_Differences.csv')
+        stats_df.to_csv(save_path, index=False)
+        print(f"\n✓ Saved Sex Differences stats to: {save_path}")
+
 if __name__ == "__main__":
     run_stats_figure_1()
     run_stats_figure_2()
@@ -892,3 +1033,4 @@ if __name__ == "__main__":
     run_stats_figure_7()  # Dendritic Excitability
     run_stats_figure_8()  # GIRK Pharmacology
     run_stats_supplemental_figure_3() # Protein Levels
+    run_stats_sex_differences() # Sex Differences

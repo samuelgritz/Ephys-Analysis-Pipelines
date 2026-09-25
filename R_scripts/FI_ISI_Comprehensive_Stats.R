@@ -1,6 +1,8 @@
 # Comprehensive F-I and ISI Statistics
 # Includes: F-I curve 2-way ANOVA, F-I slope comparison, ISI adaptation 2-way ANOVA
 library(tidyverse)
+library(lme4)
+library(lmerTest)
 
 # Significance helper (used throughout)
 sig_func <- function(p) {
@@ -93,72 +95,53 @@ fi_long <- fi_data %>%
   filter(!is.na(FiringRate)) %>%
   mutate(
     Subject = as.factor(Cell_ID),
+    # Derive Animal from Cell_ID: strip _cN suffix (each date = one mouse)
+    Animal = as.factor(sub("_c[0-9]+$", "", as.character(Cell_ID))),
     Genotype = as.factor(Genotype),
     Current = as.factor(Current)
   )
 
-cat("\nN subjects:", length(unique(fi_long$Subject)), "\n")
+cat("\nN subjects (cells):", length(unique(fi_long$Subject)), "\n")
+cat("N animals (dates):", length(unique(fi_long$Animal)), "\n")
 cat("N current levels:", length(unique(fi_long$Current)), "\n")
 
-# 2-way RM ANOVA
-model_fi <- aov(FiringRate ~ Genotype + Genotype * Current + Error(Subject/Current), data = fi_long)
+# 2-way LME with nested random effects (Animal/Subject)
+model_fi <- lmer(FiringRate ~ Genotype * Current + (1 | Animal/Subject), data = fi_long)
 
-cat("\n2-way Repeated Measures ANOVA Results:\n")
-anova_summary_fi <- summary(model_fi)
-print(anova_summary_fi)
+cat("\nLME ANOVA Results (Type III, Satterthwaite):\n")
+anova_result_fi <- anova(model_fi)
+print(anova_result_fi)
 
-# Extract statistics
-# Robust extraction function for specific stratum
-extract_from_stratum <- function(summary_obj, stratum_pattern, term_name) {
-  # Find the stratum matching the pattern
-  stratum_idx <- grep(stratum_pattern, names(summary_obj))
-  
-  if (length(stratum_idx) > 0) {
-    stratum <- summary_obj[[stratum_idx[1]]][[1]]
-    
-    # Check if term exists in this stratum (using partial match but avoiding partial strings)
-    # Using exact match on trimmed names
-    row_idx <- which(trimws(rownames(stratum)) == term_name)
-    
-    if (length(row_idx) > 0) {
-      f_val <- stratum[row_idx, "F value"]
-      p_val <- stratum[row_idx, "Pr(>F)"]
-      df1 <- stratum[row_idx, "Df"]
-      
-      # Use the residuals from the SAME stratum for df2
-      res_idx <- which(trimws(rownames(stratum)) == "Residuals")
-      if (length(res_idx) > 0) {
-        df2 <- stratum[res_idx, "Df"]
-      } else {
-        df2 <- NA
-      }
-      return(list(F = f_val, P = p_val, df1 = df1, df2 = df2))
-    }
+# Extract statistics from lmerTest ANOVA table
+anova_df_fi <- as.data.frame(anova_result_fi)
+anova_df_fi$Term <- rownames(anova_df_fi)
+
+# Map term names for output
+term_map <- c("Genotype" = "Genotype", "Current" = "Current", "Genotype:Current" = "Genotype:Current")
+
+fi_anova_results <- data.frame(
+  Term = character(0),
+  F_value = numeric(0),
+  df1 = numeric(0),
+  df2 = numeric(0),
+  p_value = numeric(0),
+  significance = character(0)
+)
+
+for (term_name in c("Genotype", "Current", "Genotype:Current")) {
+  if (term_name %in% rownames(anova_df_fi)) {
+    row_data <- anova_df_fi[term_name, ]
+    fi_anova_results <- rbind(fi_anova_results, data.frame(
+      Term = term_name,
+      F_value = row_data[["F value"]],
+      df1 = row_data[["NumDF"]],
+      df2 = row_data[["DenDF"]],
+      p_value = row_data[["Pr(>F)"]],
+      significance = sig_func(row_data[["Pr(>F)"]])
+    ))
   }
-  return(list(F = NA, P = NA, df1 = NA, df2 = NA))
 }
 
-# F-I Curve Stats
-# Genotype -> Error: Subject
-b_stats <- extract_from_stratum(anova_summary_fi, "Error: Subject", "Genotype")
-genotype_f <- b_stats$F
-genotype_p <- b_stats$P
-genotype_df1 <- b_stats$df1
-genotype_df2 <- b_stats$df2
-
-# Current & Interaction -> Error: Subject:Current (or similar within-subject error)
-# Note: grep pattern "Subject:" catches "Subject:Current" or similar
-w_stats_curr <- extract_from_stratum(anova_summary_fi, "Subject:", "Current")
-current_f <- w_stats_curr$F
-current_p <- w_stats_curr$P
-current_df1 <- w_stats_curr$df1
-current_df2 <- w_stats_curr$df2
-
-w_stats_int <- extract_from_stratum(anova_summary_fi, "Subject:", "Genotype:Current")
-interaction_f <- w_stats_int$F
-interaction_p <- w_stats_int$P
-interaction_df1 <- w_stats_int$df1
-interaction_df2 <- w_stats_int$df2
 
 # Overall mean firing rate per genotype (across all current steps)
 mean_fi <- fi_long %>%
@@ -169,16 +152,6 @@ mean_fi <- fi_long %>%
     N_cells         = n_distinct(Subject),
     .groups = 'drop'
   )
-
-fi_anova_results <- data.frame(
-  Term = c("Genotype", "Current", "Genotype:Current"),
-  F_value = c(genotype_f, current_f, interaction_f),
-  df1 = c(genotype_df1, current_df1, interaction_df1),
-  df2 = c(genotype_df2, current_df2, interaction_df2),
-  p_value = c(genotype_p, current_p, interaction_p),
-  significance = c(sig_func(genotype_p), sig_func(current_p), sig_func(interaction_p))
-)
-
 
 cat("\nF-I Curve ANOVA Summary:\n")
 print(fi_anova_results)
@@ -215,51 +188,51 @@ isi_long <- fi_data %>%
   filter(!is.na(ISI)) %>%
   mutate(
     Subject = as.factor(Cell_ID),
+    # Derive Animal from Cell_ID: strip _cN suffix (each date = one mouse)
+    Animal = as.factor(sub("_c[0-9]+$", "", as.character(Cell_ID))),
     Genotype = as.factor(Genotype),
     Spike_Number = as.factor(Spike_Number)
   )
 
-cat("\nN subjects:", length(unique(isi_long$Subject)), "\n")
+cat("\nN subjects (cells):", length(unique(isi_long$Subject)), "\n")
+cat("N animals (dates):", length(unique(isi_long$Animal)), "\n")
 cat("Spike numbers:", paste(unique(isi_long$Spike_Number), collapse=", "), "\n")
 cat("\nN observations per genotype:\n")
 print(table(isi_long$Genotype))
 
-# 2-way RM ANOVA for ISI
-model_isi <- aov(ISI ~ Genotype * Spike_Number + Error(Subject/Spike_Number), data = isi_long)
+# 2-way LME with nested random effects (Animal/Subject)
+model_isi <- lmer(ISI ~ Genotype * Spike_Number + (1 | Animal/Subject), data = isi_long)
 
-cat("\n2-way Repeated Measures ANOVA Results:\n")
-anova_summary_isi <- summary(model_isi)
-print(anova_summary_isi)
+cat("\nLME ANOVA Results (Type III, Satterthwaite):\n")
+anova_result_isi <- anova(model_isi)
+print(anova_result_isi)
 
-# Extract statistics
-# Extract statistics - Genotype from Subject stratum
-b_stats_isi <- extract_from_stratum(anova_summary_isi, "Error: Subject", "Genotype")
-geno_f_isi <- b_stats_isi$F
-geno_p_isi <- b_stats_isi$P
-geno_df1_isi <- b_stats_isi$df1
-geno_df2_isi <- b_stats_isi$df2
-
-# Spike & Interaction from Subject:Spike_Number stratum
-w_stats_spike <- extract_from_stratum(anova_summary_isi, "Subject:", "Spike_Number")
-spike_f_isi <- w_stats_spike$F
-spike_p_isi <- w_stats_spike$P
-spike_df1_isi <- w_stats_spike$df1
-spike_df2_isi <- w_stats_spike$df2
-
-w_stats_int_isi <- extract_from_stratum(anova_summary_isi, "Subject:", "Genotype:Spike_Number")
-int_f_isi <- w_stats_int_isi$F
-int_p_isi <- w_stats_int_isi$P
-int_df1_isi <- w_stats_int_isi$df1
-int_df2_isi <- w_stats_int_isi$df2
+# Extract statistics from lmerTest ANOVA table
+anova_df_isi <- as.data.frame(anova_result_isi)
 
 isi_anova_results <- data.frame(
-  Term = c("Genotype", "Spike_Number", "Genotype:Spike_Number"),
-  F_value = c(geno_f_isi, spike_f_isi, int_f_isi),
-  df1 = c(geno_df1_isi, spike_df1_isi, int_df1_isi),
-  df2 = c(geno_df2_isi, spike_df2_isi, int_df2_isi),
-  p_value = c(geno_p_isi, spike_p_isi, int_p_isi),
-  significance = c(sig_func(geno_p_isi), sig_func(spike_p_isi), sig_func(int_p_isi))
+  Term = character(0),
+  F_value = numeric(0),
+  df1 = numeric(0),
+  df2 = numeric(0),
+  p_value = numeric(0),
+  significance = character(0)
 )
+
+for (term_name in c("Genotype", "Spike_Number", "Genotype:Spike_Number")) {
+  if (term_name %in% rownames(anova_df_isi)) {
+    row_data <- anova_df_isi[term_name, ]
+    isi_anova_results <- rbind(isi_anova_results, data.frame(
+      Term = term_name,
+      F_value = row_data[["F value"]],
+      df1 = row_data[["NumDF"]],
+      df2 = row_data[["DenDF"]],
+      p_value = row_data[["Pr(>F)"]],
+      significance = sig_func(row_data[["Pr(>F)"]]),
+      stringsAsFactors = FALSE
+    ))
+  }
+}
 
 cat("\nISI Adaptation ANOVA Summary:\n")
 print(isi_anova_results)
